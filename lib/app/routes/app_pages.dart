@@ -26,10 +26,10 @@ part 'app_routes.dart';
 /// Application pages and routing configuration
 class AppPages {
   AppPages._();
-  
+
   /// Initial route
   static const initial = Routes.splash;
-  
+
   /// All application routes
   static final routes = [
     // Splash
@@ -38,7 +38,7 @@ class AppPages {
       page: () => const SplashPage(),
       transition: Transition.fade,
     ),
-    
+
     // Auth
     GetPage(
       name: Routes.login,
@@ -46,7 +46,7 @@ class AppPages {
       binding: AuthBinding(),
       transition: Transition.fadeIn,
     ),
-    
+
     // Dashboard
     GetPage(
       name: Routes.dashboard,
@@ -54,7 +54,7 @@ class AppPages {
       binding: DashboardBinding(),
       transition: Transition.fadeIn,
     ),
-    
+
     // Session Flow
     GetPage(
       name: Routes.petSelection,
@@ -70,6 +70,7 @@ class AppPages {
     GetPage(
       name: Routes.collarScan,
       page: () => const CollarScanPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
@@ -122,7 +123,7 @@ class AppPages {
       page: () => const SessionCompletePage(),
       transition: Transition.fadeIn,
     ),
-    
+
     // Settings
     GetPage(
       name: Routes.settings,

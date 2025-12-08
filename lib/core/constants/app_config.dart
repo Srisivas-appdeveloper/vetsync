@@ -16,10 +16,11 @@ class AppConfig {
 
   // BLE Configuration
   static const String collarServiceUuid =
-      '12345678-1234-5678-1234-56789abcdef0';
-  static const String dataCharUuid = '12345678-1234-5678-1234-56789abcdef1';
-  static const String commandCharUuid = '12345678-1234-5678-1234-56789abcdef2';
-  static const String batteryCharUuid = '12345678-1234-1234-1234-123456789abf';
+      '6E400001-B5A3-F393-E0A9-E50E24DCCA9E';
+  static const String commandCharUuid =
+      '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'; // RX (Write)
+  static const String dataCharUuid =
+      '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'; // TX (Notify)
 
   // BLE Scan Configuration
   static const Duration bleScanTimeout = Duration(seconds: 10);
@@ -98,7 +99,6 @@ class StorageKeys {
 class ApiEndpoints {
   ApiEndpoints._();
 
-  // ============ EXISTING (KEEP AS-IS) ============
   // Auth
   static const String login = '/auth/login';
   static const String logout = '/auth/logout';
@@ -106,10 +106,10 @@ class ApiEndpoints {
   static const String profile = '/auth/profile';
 
   // Animals
-  static const String animals = '/animals';
-  static String animal(String id) => '/animals/$id';
-  static const String searchAnimals = '/animals/search';
-  static const String recentAnimals = '/animals/recent';
+  static const String animals = '/animal/';
+  static String animal(String id) => '/animal/$id';
+  static const String searchAnimals = '/animal/search';
+  static const String recentAnimals = '/animal/';
 
   // Collars
   static const String collars = '/collars';

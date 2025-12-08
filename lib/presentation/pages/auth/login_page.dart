@@ -86,17 +86,17 @@ class LoginPage extends GetView<AuthController> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ✅ FIXED: Changed from "Observer ID" to "Email"
+          // Email field
           TextFormField(
             controller: controller.observerIdController,
             decoration: InputDecoration(
-              labelText: 'Email', // Changed
-              hintText: 'Enter your email', // Changed
-              prefixIcon: const Icon(Icons.email_outlined), // Changed icon
+              labelText: 'Email',
+              hintText: 'Enter your email address',
+              prefixIcon: const Icon(Icons.email_outlined),
               filled: true,
               fillColor: AppColors.surface,
             ),
-            keyboardType: TextInputType.emailAddress, // Changed
+            keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             validator: controller.validateObserverId,
             enabled: !controller.isLoading.value,

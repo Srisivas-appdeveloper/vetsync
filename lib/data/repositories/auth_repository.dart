@@ -56,7 +56,11 @@ class AuthRepository {
   /// Get profile from API
   Future<Observer> getProfile() async {
     final response = await _api.get(ApiEndpoints.profile);
-    print('response.data: ${response.data}');
-    return Observer.fromJson(response.data as Map<String, dynamic>);
+    final responseData = response.data as Map<String, dynamic>;
+
+    final userData =
+        responseData['data'] as Map<String, dynamic>? ?? responseData;
+
+    return Observer.fromJson(userData);
   }
 }

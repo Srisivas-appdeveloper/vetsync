@@ -22,7 +22,9 @@ enum Sex {
   male('male', 'Male'),
   female('female', 'Female'),
   neutered('neutered', 'Neutered'),
-  spayed('spayed', 'Spayed');
+  neuteredMale('neutered_male', 'Neutered Male'),
+  spayed('spayed', 'Spayed'),
+  spayedFemale('spayed_female', 'Spayed Female');
 
   final String value;
   final String displayName;
@@ -30,9 +32,21 @@ enum Sex {
   const Sex(this.value, this.displayName);
 
   static Sex fromString(String value) {
+    final normalized = value.toLowerCase().trim();
     return Sex.values.firstWhere(
-      (e) => e.value == value.toLowerCase(),
-      orElse: () => Sex.male,
+      (e) => e.value == normalized,
+      orElse: () {
+        // Handle alternative values
+        if (normalized == 'neutered_male' || normalized == 'neuteredmale') {
+          return Sex.neuteredMale;
+        }
+        if (normalized == 'spayed_female' || normalized == 'spayedfemale') {
+          return Sex.spayedFemale;
+        }
+        if (normalized == 'm') return Sex.male;
+        if (normalized == 'f') return Sex.female;
+        return Sex.male;
+      },
     );
   }
 }

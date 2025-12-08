@@ -316,7 +316,7 @@ class SessionCompletePage extends StatelessWidget {
                 '±${session.calibrationErrorBpm?.toStringAsFixed(1) ?? '-'} bpm',
               ),
               const SizedBox(height: 8),
-              _summaryRow('Quality', session.calibrationQualityLabel ?? '-'),
+              _summaryRow('Quality', session.calibrationQualityLabel ?? 'N/A'),
             ],
           ],
         ),

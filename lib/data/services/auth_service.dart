@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/constants/app_config.dart';
@@ -98,99 +100,46 @@ class AuthService extends GetxService {
     required String password,
   }) async {
     try {
-      // ✅ FIXED: Send 'email' instead of 'observer_id'
-      print('🚀 Attempting login with email: $observerId');
+      final deviceId = await _storage.getDeviceId();
+      final packageInfo = await PackageInfo.fromPlatform();
 
       final response = await _api.post(
         ApiEndpoints.login,
         data: {
-          'email': observerId, // Changed from 'observer_id' to 'email'
+          'email': observerId, // API expects 'email' not 'observer_id'
           'password': password,
+          'device_id': deviceId,
+          'app_version': packageInfo.version,
         },
       );
 
-      print('📥 Response Status Code: ${response.statusCode}');
-      print('📦 Full Response Body:');
-      print(response.data);
-      print('=' * 50);
-
       if (response.statusCode == 200) {
-        // ✅ FIXED: Parse the nested response structure
-        final responseBody = response.data as Map<String, dynamic>;
+        final data = response.data as Map<String, dynamic>;
 
-        print('✅ Login API returned 200');
-        print('📋 Success: ${responseBody['success']}');
-        print('💬 Message: ${responseBody['message']}');
+        // Debug: Print API response structure
+        debugPrint('Login API Response: $data');
 
-        // Check if the API returned success
-        if (responseBody['success'] != true) {
-          print('❌ API returned success=false');
-          return AuthResult.failure(responseBody['message'] ?? 'Login failed');
-        }
+        final authToken = AuthToken.fromJson(data);
 
-        // Get the actual data from the nested structure
-        final data = responseBody['data'] as Map<String, dynamic>;
-        final user = data['user'] as Map<String, dynamic>;
+        // Store tokens
+        await _storage.setAccessToken(authToken.accessToken);
+        await _storage.setRefreshToken(authToken.refreshToken);
+        await _storage.setTokenExpiry(authToken.expiresAt);
 
-        print('🔑 Extracting user data...');
-        print('👤 User ID: ${user['id']}');
-        print('👤 Username: ${user['username']}');
-        print('📧 Email: ${user['email']}');
-        print('🎫 Token Type: ${data['token_type']}');
+        // Store observer info
+        await _storage.setObserverId(authToken.observer.id);
+        await _storage.setObserverName(authToken.observer.name);
+        await _storage.setClinicId(authToken.observer.clinicId);
+        await _storage.setClinicName(authToken.observer.clinicName);
 
-        // Extract tokens
-        final accessToken = data['access_token'] as String;
-        final tokenType = data['token_type'] as String;
-
-        print('💾 Storing tokens and user info...');
-
-        // Store access token
-        await _storage.setAccessToken(accessToken);
-
-        // ⚠️ Your API doesn't return refresh_token or expires_in
-        // You may need to set a default expiry or update your API
-        final expiry = DateTime.now().add(const Duration(hours: 8));
-        await _storage.setTokenExpiry(expiry);
-
-        print('⏰ Token expiry set to: $expiry');
-
-        // Store observer info from user object
-        await _storage.setObserverId(user['id'].toString());
-        await _storage.setObserverName(user['username'] as String);
-
-        // ⚠️ Your API doesn't return clinic info
-        // You may need to make a separate call or update your API
-        await _storage.setClinicId('1'); // Placeholder
-        await _storage.setClinicName('Default Clinic'); // Placeholder
-
-        print('✅ User info stored successfully');
-
-        // Create observer object
-        currentObserver.value = Observer(
-          id: user['id'].toString(),
-          name: user['username'] as String,
-          email: user['email'] as String,
-          clinicId: '1', // Placeholder
-          clinicName: 'Default Clinic', // Placeholder
-          createdAt: DateTime.parse(user['created_at'] as String),
-        );
-
+        currentObserver.value = authToken.observer;
         isAuthenticated.value = true;
-
-        print('🎉 Login successful!');
-        print('=' * 50);
 
         return AuthResult.success();
       }
 
-      print('❌ Login failed with status code: ${response.statusCode}');
       return AuthResult.failure('Login failed');
     } catch (e) {
-      print('💥 Exception during login:');
-      print('Error Type: ${e.runtimeType}');
-      print('Error Message: $e');
-      print('=' * 50);
-
       if (e is ApiException) {
         return AuthResult.failure(e.message);
       }
@@ -310,7 +259,8 @@ class AuthService extends GetxService {
   }
 
   /// Get device information
-  Future<Map<String, String>> getDeviceInfo(dynamic deviceInfo) async {
+  Future<Map<String, String>> getDeviceInfo() async {
+    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
     final PackageInfo packageInfo = await PackageInfo.fromPlatform();
     final String deviceId = await _storage.getDeviceId();
 

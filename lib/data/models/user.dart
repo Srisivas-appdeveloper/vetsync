@@ -24,30 +24,78 @@ class Observer {
 
   /// Get initials for avatar fallback
   String get initials {
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return '?';
+
+    final parts = trimmedName.split(' ');
+    if (parts.length >= 2 && parts.first.isNotEmpty && parts.last.isNotEmpty) {
       return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
-    return parts.first.substring(0, 2).toUpperCase();
+
+    // Single word name - take first 1-2 characters
+    if (trimmedName.length >= 2) {
+      return trimmedName.substring(0, 2).toUpperCase();
+    }
+    return trimmedName[0].toUpperCase();
   }
 
   /// Get first name
   String get firstName {
-    final parts = name.trim().split(' ');
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return 'User';
+    final parts = trimmedName.split(' ');
     return parts.first;
   }
 
   factory Observer.fromJson(Map<String, dynamic> json) {
+    // Handle clinic as either flat fields or nested object
+    String clinicId;
+    String clinicName;
+
+    if (json['clinic'] != null && json['clinic'] is Map) {
+      // Nested clinic object: { "clinic": { "id": "...", "name": "..." } }
+      final clinic = json['clinic'] as Map<String, dynamic>;
+      clinicId = _toString(clinic['clinic_id'] ?? clinic['id'] ?? '');
+      clinicName =
+          clinic['clinic_name'] as String? ?? clinic['name'] as String? ?? '';
+    } else {
+      // Flat fields: { "clinic_id": "...", "clinic_name": "..." }
+      clinicId = _toString(json['clinic_id'] ?? '');
+      clinicName = json['clinic_name'] as String? ?? '';
+    }
+
+    // Handle created_at - might be string or might be missing
+    DateTime createdAt;
+    if (json['created_at'] != null) {
+      createdAt = DateTime.parse(json['created_at'] as String);
+    } else {
+      createdAt = DateTime.now();
+    }
+
+    // Get name from various possible fields
+    String name =
+        json['name'] as String? ??
+        json['full_name'] as String? ??
+        json['username'] as String? ??
+        '';
+
     return Observer(
-      id: json['observer_id'] as String? ?? json['id'] as String,
-      name: json['name'] as String,
-      email: json['email'] as String,
-      clinicId: json['clinic_id'] as String,
-      clinicName: json['clinic_name'] as String,
+      id: _toString(json['observer_id'] ?? json['id'] ?? json['user_id'] ?? ''),
+      name: name,
+      email: json['email'] as String? ?? '',
+      clinicId: clinicId,
+      clinicName: clinicName,
       avatarUrl: json['avatar_url'] as String?,
       isActive: json['is_active'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: createdAt,
     );
+  }
+
+  /// Helper to convert any value to String
+  static String _toString(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    return value.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -91,13 +139,28 @@ class AuthToken {
   }
 
   factory AuthToken.fromJson(Map<String, dynamic> json) {
-    final expiresIn = json['expires_in'] as int? ?? 28800; // Default 8 hours
+    // Handle wrapped response: { "success": true, "data": { ... } }
+    final data = json['data'] as Map<String, dynamic>? ?? json;
+
+    final expiresIn = data['expires_in'] as int? ?? 28800; // Default 8 hours
+
+    // Handle observer - might be nested in 'user' or 'observer'
+    Map<String, dynamic> observerJson;
+    if (data['observer'] != null) {
+      observerJson = data['observer'] as Map<String, dynamic>;
+    } else if (data['user'] != null) {
+      observerJson = data['user'] as Map<String, dynamic>;
+    } else {
+      // Observer data might be at root level
+      observerJson = data;
+    }
 
     return AuthToken(
-      accessToken: json['access_token'] as String,
-      refreshToken: json['refresh_token'] as String,
+      accessToken:
+          data['access_token'] as String? ?? data['token'] as String? ?? '',
+      refreshToken: data['refresh_token'] as String? ?? '',
       expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
-      observer: Observer.fromJson(json['observer'] as Map<String, dynamic>),
+      observer: Observer.fromJson(observerJson),
     );
   }
 

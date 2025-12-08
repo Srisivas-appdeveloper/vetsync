@@ -6,7 +6,9 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/constants/app_config.dart';
 import '../models/models.dart';
+import '../models/collar_protocol.dart';
 
+/// BLE service for collar communication
 /// BLE service for collar communication
 class BleService extends GetxService {
   // Connection state
@@ -15,9 +17,8 @@ class BleService extends GetxService {
 
   // Connected device
   BluetoothDevice? _connectedDevice;
-  BluetoothCharacteristic? _dataCharacteristic;
-  BluetoothCharacteristic? _commandCharacteristic;
-  BluetoothCharacteristic? _batteryCharacteristic;
+  BluetoothCharacteristic? _dataCharacteristic; // TX (Notify)
+  BluetoothCharacteristic? _commandCharacteristic; // RX (Write)
 
   // Current collar info
   final Rxn<DiscoveredCollar> connectedCollar = Rxn<DiscoveredCollar>();
@@ -146,9 +147,9 @@ class BleService extends GetxService {
   void _processDiscoveredDevice(ScanResult result) {
     // Extract collar ID from advertisement data or device name
     final deviceName = result.device.platformName;
-    if (!deviceName.startsWith('VetSync-')) return;
+    if (!deviceName.startsWith('VetSync_')) return;
 
-    final collarId = deviceName.replaceFirst('VetSync-', '');
+    final collarId = deviceName.replaceFirst('VetSync_', '');
 
     // Extract battery from manufacturer data if available
     int? batteryPercent;
@@ -204,7 +205,7 @@ class BleService extends GetxService {
       // Discover services
       final services = await collar.device.discoverServices();
 
-      // Find VetSync service
+      // Find VetSync service (Nordic UART)
       final service = services.firstWhere(
         (s) =>
             s.uuid.toString().toLowerCase() ==
@@ -216,29 +217,21 @@ class BleService extends GetxService {
       for (final char in service.characteristics) {
         final uuid = char.uuid.toString().toLowerCase();
         if (uuid == AppConfig.dataCharUuid.toLowerCase()) {
-          _dataCharacteristic = char;
+          _dataCharacteristic = char; // TX (Notify)
         } else if (uuid == AppConfig.commandCharUuid.toLowerCase()) {
-          _commandCharacteristic = char;
-        } else if (uuid == AppConfig.batteryCharUuid.toLowerCase()) {
-          _batteryCharacteristic = char;
+          _commandCharacteristic = char; // RX (Write)
         }
       }
 
-      if (_dataCharacteristic == null) {
-        throw BleException('Data characteristic not found');
+      if (_dataCharacteristic == null || _commandCharacteristic == null) {
+        throw BleException('Required characteristics not found');
       }
 
-      // Subscribe to data notifications
+      // Subscribe to data/response notifications
       await _dataCharacteristic!.setNotifyValue(true);
       _dataSubscription = _dataCharacteristic!.lastValueStream.listen(
         _onDataReceived,
       );
-
-      // Subscribe to battery notifications if available
-      if (_batteryCharacteristic != null) {
-        await _batteryCharacteristic!.setNotifyValue(true);
-        _batteryCharacteristic!.lastValueStream.listen(_onBatteryUpdate);
-      }
 
       // Listen for disconnection
       _connectionSubscription = collar.device.connectionState.listen((state) {
@@ -279,7 +272,6 @@ class BleService extends GetxService {
     _connectedDevice = null;
     _dataCharacteristic = null;
     _commandCharacteristic = null;
-    _batteryCharacteristic = null;
     connectedCollar.value = null;
     connectionState.value = BleConnectionState.disconnected;
   }
@@ -343,17 +335,27 @@ class BleService extends GetxService {
     return AppConfig.maxReconnectAttempts - _reconnectAttempts;
   }
 
-  /// Handle received data
+  /// Handle received data (Responses or Stream Packets)
   void _onDataReceived(List<int> data) {
     if (data.isEmpty) return;
 
+    final bytes = Uint8List.fromList(data);
+
+    // Try to parse as a command response first
+    final response = CollarResponse.fromBytes(bytes);
+    if (response != null) {
+      _handleResponse(response);
+      return;
+    }
+
+    // If not a response, assume it's a data packet
     try {
-      final packet = CollarDataPacket.fromBytes(Uint8List.fromList(data));
+      final packet = CollarDataPacket.fromBytes(bytes);
 
       // Update local state
       batteryPercent.value = packet.batteryPercent;
       signalQuality.value = packet.signalQuality;
-      currentMode.value = packet.mode;
+      // currentMode.value = packet.mode; // Mode is not in FilteredDataPacket directly, but in status flags
 
       // Emit raw packet to stream
       _dataController.add(packet);
@@ -369,14 +371,27 @@ class BleService extends GetxService {
       );
       _vitalsController.add(vitals);
     } catch (e) {
-      print('Error parsing packet: $e');
+      // print('Error parsing packet: $e');
     }
   }
 
-  /// Handle battery update
-  void _onBatteryUpdate(List<int> data) {
-    if (data.isNotEmpty) {
-      batteryPercent.value = data[0];
+  /// Handle parsed command response
+  void _handleResponse(CollarResponse response) {
+    if (response is DeviceInfoResponse) {
+      print(
+        'Device Info: ${response.deviceId}, FW: ${response.firmwareVersion}',
+      );
+      batteryPercent.value = response.batteryPercent;
+      // Update firmware version in connected collar object if possible
+    } else if (response is BatteryResponse) {
+      batteryPercent.value = response.batteryPercent;
+    } else if (response is ModeSwitchResponse) {
+      if (response.success) {
+        // currentMode.value = ... // Map int to enum
+        print('Mode switched to: ${response.currentMode}');
+      } else {
+        print('Mode switch failed');
+      }
     }
   }
 
@@ -396,26 +411,27 @@ class BleService extends GetxService {
 
   /// Switch firmware mode
   Future<void> switchMode(FirmwareMode targetMode, {int sessionId = 0}) async {
-    final command = CollarCommand.switchMode(
-      targetMode: targetMode,
-      sessionId: sessionId,
-    );
-    await sendCommand(command);
+    // Map enum to protocol value (0x01 = STANDARD, 0x02 = HIGH-RES)
+    final modeValue = targetMode == FirmwareMode.raw ? 0x02 : 0x01;
 
-    // Wait for mode to change
-    await Future.delayed(const Duration(milliseconds: 500));
+    final command = CollarCommand.switchMode(targetMode: modeValue);
+    await sendCommand(command);
   }
 
   /// Request status from collar
   Future<void> requestStatus() async {
-    final command = CollarCommand.requestStatus();
-    await sendCommand(command);
+    await sendCommand(CollarCommand.getInfo());
   }
 
-  /// Sync time with collar
+  /// Request battery status
+  Future<void> requestBattery() async {
+    await sendCommand(CollarCommand.getBattery());
+  }
+
+  /// Sync time with collar (Not supported in new protocol yet, placeholder)
   Future<void> syncTime() async {
-    final command = CollarCommand.setTime();
-    await sendCommand(command);
+    // final command = CollarCommand.setTime();
+    // await sendCommand(command);
   }
 
   /// Check if connected
