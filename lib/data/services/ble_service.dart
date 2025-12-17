@@ -7,8 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/constants/app_config.dart';
 import '../models/models.dart';
 import '../models/collar_protocol.dart';
+import '../../core/algorithms/bcg_algorithm.dart'; 
 
-/// BLE service for collar communication
 /// BLE service for collar communication
 class BleService extends GetxService {
   // Connection state
@@ -54,6 +54,10 @@ class BleService extends GetxService {
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _dataSubscription;
+
+  // Algorithm instance for data processing
+  // Use BcgAlgorithmRaw to handle both standard and raw inputs
+  final BcgAlgorithmRaw _bcgAlgorithm = BcgAlgorithmRaw(); 
 
   @override
   void onInit() {
@@ -244,6 +248,9 @@ class BleService extends GetxService {
       connectionState.value = BleConnectionState.connected;
       _reconnectAttempts = 0;
 
+      // Reset algorithm state on new connection
+      _bcgAlgorithm.reset(); 
+
       // Request initial status
       await requestStatus();
     } catch (e) {
@@ -354,22 +361,46 @@ class BleService extends GetxService {
 
       // Update local state
       batteryPercent.value = packet.batteryPercent;
-      signalQuality.value = packet.signalQuality;
-      // currentMode.value = packet.mode; // Mode is not in FilteredDataPacket directly, but in status flags
+
+      BcgResult result;
+      Vitals vitals;
+
+      // === FIXED LOGIC: ALWAYS CALCULATE VITALS LOCALLY ===
+      
+      if (packet.isRaw) {
+        // --- RAW MODE: Process Raw Pressure (128Hz) ---
+        // Feed raw samples to algorithm
+        result = _bcgAlgorithm.processRawSamples([packet.pressureRaw ?? 0]);
+        
+        // Use algorithm-calculated quality
+        signalQuality.value = result.signalQuality;
+
+      } else {
+        // --- STANDARD MODE: Process Filtered Pressure (100Hz) ---
+        // Feed filtered samples to algorithm
+        // Note: Spec 6.1 says collar sends 'pressure_filtered' but NO vitals.
+        // So we must calculate HR/RR here too.
+        result = _bcgAlgorithm.processSamples([packet.pressureFiltered]);
+        
+        // Use collar's reported quality or fallback to algorithm
+        signalQuality.value = packet.signalQuality; 
+      }
+
+      // Create Vitals object from LOCAL CALCULATIONS
+      vitals = Vitals(
+        heartRateBpm: result.heartRateBpm,          // App Calculated
+        respiratoryRateBpm: result.respiratoryRateBpm, // App Calculated
+        temperatureC: packet.temperatureC,          // From Sensor
+        signalQuality: result.signalQuality,        // From Algorithm
+        timestamp: DateTime.now().toUtc(),
+      );
 
       // Emit raw packet to stream
       _dataController.add(packet);
 
-      // Convert to vitals and emit
-      final vitals = Vitals(
-        heartRateBpm: packet.heartRateBpm ?? 0,
-        respiratoryRateBpm: packet.respiratoryRateBpm ?? 0,
-        temperatureC: packet.temperatureC,
-        signalQuality: packet.signalQuality,
-        timestamp: DateTime.now().toUtc(),
-        // source: VitalsSource.collar,
-      );
+      // Emit processed vitals
       _vitalsController.add(vitals);
+      
     } catch (e) {
       // print('Error parsing packet: $e');
     }
@@ -387,7 +418,6 @@ class BleService extends GetxService {
       batteryPercent.value = response.batteryPercent;
     } else if (response is ModeSwitchResponse) {
       if (response.success) {
-        // currentMode.value = ... // Map int to enum
         print('Mode switched to: ${response.currentMode}');
       } else {
         print('Mode switch failed');
@@ -411,11 +441,17 @@ class BleService extends GetxService {
 
   /// Switch firmware mode
   Future<void> switchMode(FirmwareMode targetMode, {int sessionId = 0}) async {
-    // Map enum to protocol value (0x01 = STANDARD, 0x02 = HIGH-RES)
+    // Reset algorithm when switching modes to clear buffers
+    _bcgAlgorithm.reset(); 
+
+    // Map enum to protocol value (0x01 = STANDARD, 0x02 = HIGH-RES/RAW)
     final modeValue = targetMode == FirmwareMode.raw ? 0x02 : 0x01;
 
     final command = CollarCommand.switchMode(targetMode: modeValue);
     await sendCommand(command);
+    
+    // Optimistically update mode
+    currentMode.value = targetMode;
   }
 
   /// Request status from collar
@@ -461,37 +497,3 @@ class BleException implements Exception {
   @override
   String toString() => message;
 }
-
-// class CollarCommand {
-//   /// Build mode switch command (9 bytes)
-//   static Uint8List switchMode({
-//     required int targetMode, // 0x01 = FILTERED, 0x02 = RAW
-//     required String sessionId,
-//   }) {
-//     final bytes = Uint8List(9);
-//     final data = ByteData.view(bytes.buffer);
-    
-//     // Command ID
-//     data.setUint8(0, BlePacketTypes.cmdSwitchMode); // 0x10
-    
-//     // Target mode
-//     data.setUint8(1, targetMode);
-    
-//     // Timestamp (milliseconds since epoch, truncated)
-//     final timestamp = DateTime.now().millisecondsSinceEpoch;
-//     data.setUint32(2, timestamp & 0xFFFFFFFF, Endian.little);
-    
-//     // Session ID (first 16 bits of UUID hash)
-//     final sessionIdHash = sessionId.hashCode & 0xFFFF;
-//     data.setUint16(6, sessionIdHash, Endian.little);
-    
-//     // XOR checksum
-//     int checksum = 0;
-//     for (int i = 0; i < 8; i++) {
-//       checksum ^= bytes[i];
-//     }
-//     data.setUint8(8, checksum);
-    
-//     return bytes;
-//   }
-// }
