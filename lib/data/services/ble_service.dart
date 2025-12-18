@@ -5,9 +5,14 @@ import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/constants/app_config.dart';
+import '../../services/bcg_service.dart';
 import '../models/models.dart';
+// import '../models/collar_protocol.dart'; // Likely included in models or not needed if using validated packet mostly.
+// But we need CollarResponse.
 import '../models/collar_protocol.dart';
-import '../../core/algorithms/bcg_algorithm.dart'; 
+// import '../models/collar_data_packet.dart'; // Using models.dart version (vitals.dart) for compatibility
+import '../models/collar_packet_validated.dart'
+    as validated; // Prefix new one to avoid confusion if any shared names, though names are distinct (CollarPacket vs CollarDataPacket).
 
 /// BLE service for collar communication
 class BleService extends GetxService {
@@ -55,9 +60,10 @@ class BleService extends GetxService {
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _dataSubscription;
 
-  // Algorithm instance for data processing
-  // Use BcgAlgorithmRaw to handle both standard and raw inputs
-  final BcgAlgorithmRaw _bcgAlgorithm = BcgAlgorithmRaw(); 
+  // Algorithm instance for data processing refactored to Service
+  // Use BcgService to handle buffering, mode switching and processing
+  final BcgService _bcgService = BcgService();
+  BcgService get bcgService => _bcgService; // Expose for UI access
 
   @override
   void onInit() {
@@ -71,8 +77,35 @@ class BleService extends GetxService {
       if (state != BluetoothAdapterState.on) {
         connectionState.value = BleConnectionState.disconnected;
         _connectedDevice = null;
+        _bcgService.reset();
       }
     });
+
+    // Listen to BCG service updates for Vitals
+    _bcgService.addListener(_onBcgUpdate);
+  }
+
+  /// Handle BCG Service updates
+  void _onBcgUpdate() {
+    final result = _bcgService.latestResult;
+    if (result == null) return;
+
+    // Create vitals from BCG result
+    final vitals = Vitals(
+      heartRateBpm: result.heartRateBpm,
+      respiratoryRateBpm: result.respiratoryRateBpm,
+      temperatureC: _bcgService.temperatureCelsius,
+      signalQuality: result.signalQuality,
+      timestamp: DateTime.now().toUtc(),
+    );
+
+    // Update local state helpers
+    if (result.isValid) {
+      signalQuality.value = result.signalQuality;
+    }
+
+    // Emit vitals
+    _vitalsController.add(vitals);
   }
 
   /// Request BLE permissions
@@ -249,7 +282,7 @@ class BleService extends GetxService {
       _reconnectAttempts = 0;
 
       // Reset algorithm state on new connection
-      _bcgAlgorithm.reset(); 
+      _bcgService.reset();
 
       // Request initial status
       await requestStatus();
@@ -357,50 +390,48 @@ class BleService extends GetxService {
 
     // If not a response, assume it's a data packet
     try {
-      final packet = CollarDataPacket.fromBytes(bytes);
+      // Parse with validated packet parser
+      // Don't throw on CRC error here to prevent crashing stream, just ignore
+      // In production you might want to log this
+      final packet = validated.CollarPacket.fromBytes(
+        bytes,
+        throwOnCrcError: false,
+      );
+
+      if (!packet.crcValid) {
+        // print('CRC Error');
+        return;
+      }
 
       // Update local state
       batteryPercent.value = packet.batteryPercent;
 
-      BcgResult result;
-      Vitals vitals;
+      // Feed to BCG Service
+      _bcgService.onPacketReceived(packet);
 
-      // === FIXED LOGIC: ALWAYS CALCULATE VITALS LOCALLY ===
-      
-      if (packet.isRaw) {
-        // --- RAW MODE: Process Raw Pressure (128Hz) ---
-        // Feed raw samples to algorithm
-        result = _bcgAlgorithm.processRawSamples([packet.pressureRaw ?? 0]);
-        
-        // Use algorithm-calculated quality
-        signalQuality.value = result.signalQuality;
-
-      } else {
-        // --- STANDARD MODE: Process Filtered Pressure (100Hz) ---
-        // Feed filtered samples to algorithm
-        // Note: Spec 6.1 says collar sends 'pressure_filtered' but NO vitals.
-        // So we must calculate HR/RR here too.
-        result = _bcgAlgorithm.processSamples([packet.pressureFiltered]);
-        
-        // Use collar's reported quality or fallback to algorithm
-        signalQuality.value = packet.signalQuality; 
-      }
-
-      // Create Vitals object from LOCAL CALCULATIONS
-      vitals = Vitals(
-        heartRateBpm: result.heartRateBpm,          // App Calculated
-        respiratoryRateBpm: result.respiratoryRateBpm, // App Calculated
-        temperatureC: packet.temperatureC,          // From Sensor
-        signalQuality: result.signalQuality,        // From Algorithm
-        timestamp: DateTime.now().toUtc(),
+      // Create legacy CollarDataPacket if needed for dataStream
+      // We map the validated packet to the legacy DTO structure
+      final legacyPacket = CollarDataPacket(
+        packetType: packet.packetType,
+        sequenceNumber:
+            0, // Not available in new validated packet structure yet
+        timestampMs: packet.timestampMs,
+        heartRateBpm: _bcgService.latestResult?.heartRateBpm ?? 0,
+        respiratoryRateBpm: _bcgService.latestResult?.respiratoryRateBpm ?? 0,
+        temperatureC: packet.temperatureCelsius,
+        batteryPercent: packet.batteryPercent,
+        signalQuality: packet.quality,
+        pressureFiltered: packet.pressure,
+        pressureRaw: packet.isHighResMode ? packet.pressure : null,
+        // statusFlags: packet.statusFlags, // Not in legacy model
+        // crc16: packet.crc16, // Not in legacy model constructor
+        imuAccel: [packet.accelX, packet.accelY, packet.accelZ],
+        imuGyro: [packet.gyroX, packet.gyroY, packet.gyroZ],
+        receivedAt: packet.receivedAt,
       );
 
       // Emit raw packet to stream
-      _dataController.add(packet);
-
-      // Emit processed vitals
-      _vitalsController.add(vitals);
-      
+      _dataController.add(legacyPacket);
     } catch (e) {
       // print('Error parsing packet: $e');
     }
@@ -419,6 +450,8 @@ class BleService extends GetxService {
     } else if (response is ModeSwitchResponse) {
       if (response.success) {
         print('Mode switched to: ${response.currentMode}');
+        // Update local mode state
+        // Note: Mode from response is 0x01/0x02, FirmwareMode enum need mapping
       } else {
         print('Mode switch failed');
       }
@@ -441,15 +474,15 @@ class BleService extends GetxService {
 
   /// Switch firmware mode
   Future<void> switchMode(FirmwareMode targetMode, {int sessionId = 0}) async {
-    // Reset algorithm when switching modes to clear buffers
-    _bcgAlgorithm.reset(); 
-
+    // Notify BCG service about mode change
     // Map enum to protocol value (0x01 = STANDARD, 0x02 = HIGH-RES/RAW)
     final modeValue = targetMode == FirmwareMode.raw ? 0x02 : 0x01;
 
+    _bcgService.onModeChange(modeValue);
+
     final command = CollarCommand.switchMode(targetMode: modeValue);
     await sendCommand(command);
-    
+
     // Optimistically update mode
     currentMode.value = targetMode;
   }

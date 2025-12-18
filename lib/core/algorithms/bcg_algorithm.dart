@@ -2,10 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:fftea/fftea.dart';
 
-/// BCG (Ballistocardiography) Signal Processing Algorithm
-/// Extracts heart rate and respiratory rate from collar pressure sensor data
 class BcgAlgorithm {
-  // Sampling configuration
   final int sampleRate;
 
   // Processing buffers
@@ -18,7 +15,7 @@ class BcgAlgorithm {
   static const int hrWindowSeconds = 10; // Window for HR estimation
   static const int rrWindowSeconds =
       30; // Window for RR estimation (longer for breathing)
-  static const int minBufferSeconds = 5; // Minimum data needed
+  static const int minBufferSeconds = 5;
 
   // HR detection thresholds (dogs: 60-180 BPM)
   static const double hrMinFreq = 0.8; // 48 BPM
