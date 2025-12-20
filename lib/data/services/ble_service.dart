@@ -7,12 +7,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/constants/app_config.dart';
 import '../../services/bcg_service.dart';
 import '../models/models.dart';
-// import '../models/collar_protocol.dart'; // Likely included in models or not needed if using validated packet mostly.
-// But we need CollarResponse.
 import '../models/collar_protocol.dart';
-// import '../models/collar_data_packet.dart'; // Using models.dart version (vitals.dart) for compatibility
-import '../models/collar_packet_validated.dart'
-    as validated; // Prefix new one to avoid confusion if any shared names, though names are distinct (CollarPacket vs CollarDataPacket).
+
+import '../models/collar_packet_validated.dart' as validated;
 
 /// BLE service for collar communication
 class BleService extends GetxService {
@@ -50,6 +47,12 @@ class BleService extends GetxService {
   Timer? _reconnectTimer;
   bool _shouldReconnect = false;
   String? _lastCollarId;
+
+  // Keep-alive mechanism
+  Timer? _keepAliveTimer;
+  DateTime? _lastDataReceived;
+  static const Duration _keepAliveInterval = Duration(seconds: 15);
+  static const Duration _dataTimeout = Duration(seconds: 10);
 
   // Scan results
   final RxList<DiscoveredCollar> discoveredCollars = <DiscoveredCollar>[].obs;
@@ -266,8 +269,14 @@ class BleService extends GetxService {
 
       // Subscribe to data/response notifications
       await _dataCharacteristic!.setNotifyValue(true);
-      _dataSubscription = _dataCharacteristic!.lastValueStream.listen(
+      _dataSubscription = _dataCharacteristic!.onValueReceived.listen(
         _onDataReceived,
+        onError: (error) {
+          print('BLE data stream error: $error');
+          // Attempt to recover from stream errors
+          _onDisconnected();
+        },
+        cancelOnError: false,
       );
 
       // Listen for disconnection
@@ -280,12 +289,20 @@ class BleService extends GetxService {
       connectedCollar.value = collar;
       connectionState.value = BleConnectionState.connected;
       _reconnectAttempts = 0;
+      print('✅ Connected to collar: ${collar.collarId}');
 
       // Reset algorithm state on new connection
       _bcgService.reset();
 
       // Request initial status
       await requestStatus();
+
+      // Start data streaming from collar
+      await sendCommand(CollarCommand.startStream());
+      print('Started data streaming from collar');
+
+      // Start keep-alive timer
+      _startKeepAlive();
     } catch (e) {
       connectionState.value = BleConnectionState.error;
       _connectedDevice = null;
@@ -293,10 +310,54 @@ class BleService extends GetxService {
     }
   }
 
+  /// Start keep-alive timer to maintain connection
+  void _startKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _lastDataReceived = DateTime.now();
+
+    _keepAliveTimer = Timer.periodic(_keepAliveInterval, (timer) async {
+      if (!isConnected) {
+        timer.cancel();
+        return;
+      }
+
+      final timeSinceLastData = DateTime.now().difference(_lastDataReceived!);
+
+      // Check for data timeout
+      if (timeSinceLastData > _dataTimeout) {
+        print(
+          'Data timeout detected (${timeSinceLastData.inSeconds}s). No data received.',
+        );
+        // Connection might be stale, trigger reconnection
+        _onDisconnected();
+        return;
+      }
+
+      // Send keep-alive status request
+      try {
+        await requestBattery();
+        print(
+          'Keep-alive ping sent (last data: ${timeSinceLastData.inSeconds}s ago)',
+        );
+      } catch (e) {
+        print('Keep-alive failed: $e');
+        _onDisconnected();
+      }
+    });
+  }
+
+  /// Stop keep-alive timer
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
+    _lastDataReceived = null;
+  }
+
   /// Disconnect from current collar
   Future<void> disconnect() async {
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
+    _stopKeepAlive();
 
     await _dataSubscription?.cancel();
     await _connectionSubscription?.cancel();
@@ -318,12 +379,18 @@ class BleService extends GetxService {
 
   /// Handle disconnection
   void _onDisconnected() {
+    print('🔌 Disconnected from collar');
     connectionState.value = BleConnectionState.disconnected;
     _connectedDevice = null;
 
     if (_shouldReconnect &&
         _reconnectAttempts < AppConfig.maxReconnectAttempts) {
+      print(
+        '🔄 Starting reconnection attempt ${_reconnectAttempts + 1}/${AppConfig.maxReconnectAttempts}',
+      );
       _startReconnect();
+    } else if (_reconnectAttempts >= AppConfig.maxReconnectAttempts) {
+      print('❌ Maximum reconnection attempts reached');
     }
   }
 
@@ -379,6 +446,9 @@ class BleService extends GetxService {
   void _onDataReceived(List<int> data) {
     if (data.isEmpty) return;
 
+    // Update last data received timestamp
+    _lastDataReceived = DateTime.now();
+
     final bytes = Uint8List.fromList(data);
 
     // Try to parse as a command response first
@@ -399,7 +469,10 @@ class BleService extends GetxService {
       );
 
       if (!packet.crcValid) {
-        // print('CRC Error');
+        print(
+          '⚠️ CRC Error detected in data packet (timestamp: ${packet.timestampMs})',
+        );
+        // Track CRC error rate to detect connection quality issues
         return;
       }
 
@@ -433,7 +506,10 @@ class BleService extends GetxService {
       // Emit raw packet to stream
       _dataController.add(legacyPacket);
     } catch (e) {
-      // print('Error parsing packet: $e');
+      print('⚠️ Error parsing data packet: $e');
+      print(
+        '   Raw bytes: ${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}',
+      );
     }
   }
 
@@ -441,20 +517,27 @@ class BleService extends GetxService {
   void _handleResponse(CollarResponse response) {
     if (response is DeviceInfoResponse) {
       print(
-        'Device Info: ${response.deviceId}, FW: ${response.firmwareVersion}',
+        '📱 Device Info: ${response.deviceId}, FW: ${response.firmwareVersion}, Battery: ${response.batteryPercent}%',
       );
       batteryPercent.value = response.batteryPercent;
       // Update firmware version in connected collar object if possible
     } else if (response is BatteryResponse) {
+      print(
+        '🔋 Battery: ${response.batteryPercent}% ${response.isCharging ? "(Charging)" : ""}',
+      );
       batteryPercent.value = response.batteryPercent;
     } else if (response is ModeSwitchResponse) {
       if (response.success) {
-        print('Mode switched to: ${response.currentMode}');
+        print(
+          '✅ Mode switched to: 0x${response.currentMode.toRadixString(16)}',
+        );
         // Update local mode state
         // Note: Mode from response is 0x01/0x02, FirmwareMode enum need mapping
       } else {
-        print('Mode switch failed');
+        print('❌ Mode switch failed');
       }
+    } else if (response is AckResponse) {
+      print('✓ ACK received');
     }
   }
 
@@ -517,6 +600,7 @@ class BleService extends GetxService {
     _connectionSubscription?.cancel();
     _dataSubscription?.cancel();
     _reconnectTimer?.cancel();
+    _stopKeepAlive();
     disconnect();
     super.onClose();
   }

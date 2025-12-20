@@ -45,6 +45,10 @@ class BaselineController extends GetxController {
   // Computed baseline data
   final Rx<BaselineData?> baselineData = Rx<BaselineData?>(null);
 
+  // Debug counters
+  int _packetCount = 0;
+  DateTime? _startTime;
+
   // Real-time vitals
   Vitals? get latestVitals => _sessionController.latestVitals.value;
   int get signalQuality => _sessionController.signalQuality.value;
@@ -70,18 +74,46 @@ class BaselineController extends GetxController {
     _vitalsSubscription = _bleService.vitalsStream.listen((vitals) {
       if (!isCollecting.value || isPaused.value) return;
 
+      // === DEBUG LOGGING ===
+      _packetCount++;
+      if (_packetCount % 100 == 0 && _startTime != null) {
+        final elapsed = DateTime.now().difference(_startTime!);
+        final rate = elapsed.inSeconds > 0
+            ? _packetCount / elapsed.inSeconds
+            : 0.0;
+        print('═══════════════════════════════════════════════════════');
+        print('[BASELINE] Packets: $_packetCount');
+        print(
+          '[BASELINE] Rate: ${rate.toStringAsFixed(1)} Hz (target: 100 Hz)',
+        );
+        print('[BASELINE] Quality: ${vitals.signalQuality}% (IGNORED)');
+        print('[BASELINE] Battery: $batteryPercent%');
+        print('═══════════════════════════════════════════════════════');
+      }
+      // === END DEBUG LOGGING ===
+
       // Update quality tracking
       currentQuality.value = vitals.signalQuality;
       totalSamples.value++;
 
-      if (vitals.signalQuality >= AppConfig.qualityFair) {
-        validSamples.value++;
+      // BYPASSED QUALITY CHECK for debugging
+      // if (vitals.signalQuality >= AppConfig.qualityFair) {
+      if (true) {
+        // Filter out invalid zero values from BCG algorithm initialization
+        // Only collect vitals when HR and RR are non-zero (valid readings)
+        final hasValidHR = vitals.heartRateBpm > 0;
+        final hasValidRR = vitals.respiratoryRateBpm > 0;
 
-        // Collect vitals
-        collectedVitals.add(vitals);
-        heartRateSamples.add(vitals.heartRateBpm.toDouble());
-        respiratorySamples.add(vitals.respiratoryRateBpm.toDouble());
-        temperatureSamples.add(vitals.temperatureC);
+        // Also bypass valid HR checking if needed, but keeping for now as per minimal changes
+        if (hasValidHR && hasValidRR) {
+          validSamples.value++;
+
+          // Collect vitals
+          collectedVitals.add(vitals);
+          heartRateSamples.add(vitals.heartRateBpm.toDouble());
+          respiratorySamples.add(vitals.respiratoryRateBpm.toDouble());
+          temperatureSamples.add(vitals.temperatureC);
+        }
       }
 
       // Update average quality
@@ -124,6 +156,10 @@ class BaselineController extends GetxController {
     respiratorySamples.clear();
     temperatureSamples.clear();
     waveformBuffer.clear();
+
+    // Reset debug counters
+    _packetCount = 0;
+    _startTime = DateTime.now();
 
     // Start timer
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {

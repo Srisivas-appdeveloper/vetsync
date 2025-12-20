@@ -16,7 +16,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
   @override
   Widget build(BuildContext context) {
     final sessionController = Get.find<SessionController>();
-    
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -35,44 +35,44 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       body: Column(
         children: [
           // Status bar
-          Obx(() => SessionStatusBar(
-            collarId: sessionController.currentCollar.value?.serialNumber,
-            isConnected: sessionController.isCollarConnected,
-            batteryPercent: sessionController.batteryPercent.value,
-            signalQuality: sessionController.signalQuality.value,
-          )),
-          
-          Expanded(
-            child: Obx(() => _buildContent()),
+          Obx(
+            () => SessionStatusBar(
+              collarId: sessionController.currentCollar.value?.serialNumber,
+              isConnected: sessionController.isCollarConnected,
+              batteryPercent: sessionController.batteryPercent.value,
+              signalQuality: sessionController.signalQuality.value,
+            ),
           ),
+
+          Expanded(child: Obx(() => _buildContent())),
         ],
       ),
     );
   }
-  
+
   Widget _buildContent() {
     if (controller.isComplete.value) {
       return _buildComplete();
     }
-    
+
     if (!controller.isCollecting.value) {
       return _buildStart();
     }
-    
+
     return _buildCollecting();
   }
-  
+
   Widget _buildStart() {
     final sessionController = Get.find<SessionController>();
     final animal = sessionController.currentAnimal.value;
-    
+
     return SingleChildScrollView(
       padding: AppSpacing.screenPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 24),
-          
+
           // Instructions card
           Container(
             padding: const EdgeInsets.all(20),
@@ -108,11 +108,11 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             ),
           ),
           const SizedBox(height: 24),
-          
+
           // Checklist
           _buildChecklist(),
           const SizedBox(height: 32),
-          
+
           // Start button
           ElevatedButton.icon(
             onPressed: controller.startCollection,
@@ -126,7 +126,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       ),
     );
   }
-  
+
   Widget _buildChecklist() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -138,38 +138,30 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Before starting:',
-            style: AppTypography.titleSmall,
-          ),
+          Text('Before starting:', style: AppTypography.titleSmall),
           const SizedBox(height: 12),
           _checklistItem('Collar is properly positioned'),
           _checklistItem('Pet is calm and comfortable'),
           _checklistItem('Minimal environmental noise'),
-          _checklistItem('Good signal quality (>50%)'),
+          // _checklistItem('Good signal quality (>50%)'), // Removed for debug
         ],
       ),
     );
   }
-  
+
   Widget _checklistItem(String text) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline, 
-            size: 20, 
-            color: AppColors.success,
-          ),
+          Icon(Icons.check_circle_outline, size: 20, color: AppColors.success),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(text, style: AppTypography.bodyMedium),
-          ),
+          Expanded(child: Text(text, style: AppTypography.bodyMedium)),
         ],
       ),
     );
   }
-  
+
   Widget _buildCollecting() {
     return Column(
       children: [
@@ -180,51 +172,95 @@ class BaselineCollectionPage extends GetView<BaselineController> {
           child: Column(
             children: [
               // Timer
-              Obx(() => Text(
-                controller.remainingTimeFormatted,
-                style: AppTypography.timerLarge.copyWith(
-                  color: AppColors.primary,
+              Obx(
+                () => Text(
+                  controller.remainingTimeFormatted,
+                  style: AppTypography.timerLarge.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
-              )),
+              ),
               const SizedBox(height: 8),
-              Text(
-                'remaining',
-                style: AppTypography.bodySmall,
+              Text('remaining', style: AppTypography.bodySmall),
+              const SizedBox(height: 16),
+
+              // Progress bar
+              Obx(
+                () => LinearProgressIndicator(
+                  value: controller.progress,
+                  backgroundColor: AppColors.surfaceVariant,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
               const SizedBox(height: 16),
-              
-              // Progress bar
-              Obx(() => LinearProgressIndicator(
-                value: controller.progress,
-                backgroundColor: AppColors.surfaceVariant,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(4),
-              )),
-              const SizedBox(height: 16),
-              
+
               // Quality indicator
-              Obx(() => Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Signal Quality: ',
-                    style: AppTypography.bodySmall,
-                  ),
-                  Text(
-                    '${controller.avgQuality.value.round()}%',
-                    style: AppTypography.titleSmall.copyWith(
-                      color: AppColors.getQualityColor(
-                        controller.avgQuality.value.round(),
+              Obx(
+                () => Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('Signal Quality: ', style: AppTypography.bodySmall),
+                    Text(
+                      '${controller.avgQuality.value.round()}%',
+                      style: AppTypography.titleSmall.copyWith(
+                        color: AppColors.getQualityColor(
+                          controller.avgQuality.value.round(),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              )),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-        
+
+        // === DEBUG RAW DATA CARD ===
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border.all(color: Colors.blue),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'RAW DATA (Debug)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Colors.blue.shade900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Obx(
+                () => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Packets: ${controller.totalSamples.value} (Valid: ${controller.validSamples.value})',
+                    ),
+                    Text(
+                      'Signal Quality: ${controller.currentQuality.value}% (BYPASSED)',
+                    ),
+                    Text('Battery: ${controller.batteryPercent}%'),
+                    if (controller.latestVitals != null)
+                      Text(
+                        'Last HR: ${controller.latestVitals!.heartRateBpm} bpm',
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // === END DEBUG CARD ===
+
         // Waveform display
         Expanded(
           child: Padding(
@@ -232,11 +268,11 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             child: Column(
               children: [
                 const SizedBox(height: 16),
-                
+
                 // Live vitals
                 _buildLiveVitals(),
                 const SizedBox(height: 16),
-                
+
                 // Waveform chart
                 Expanded(
                   child: Container(
@@ -245,31 +281,35 @@ class BaselineCollectionPage extends GetView<BaselineController> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Obx(() => RealtimeWaveformChart(
-                      displaySeconds: 10,
-                      sampleRate: 100,
-                      minY: -1.0,
-                      maxY: 1.0,
-                      title: 'BCG Signal',
-                      lineColor: AppColors.primary,
-                      isPaused: controller.isPaused.value,
-                    )),
+                    child: Obx(
+                      () => RealtimeWaveformChart(
+                        displaySeconds: 10,
+                        sampleRate: 100,
+                        minY: -1.0,
+                        maxY: 1.0,
+                        title: 'BCG Signal',
+                        lineColor: AppColors.primary,
+                        isPaused: controller.isPaused.value,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Pause/Resume button
-                Obx(() => OutlinedButton.icon(
-                  onPressed: controller.isPaused.value
-                      ? controller.resumeCollection
-                      : controller.pauseCollection,
-                  icon: Icon(
-                    controller.isPaused.value ? Icons.play_arrow : Icons.pause,
+                Obx(
+                  () => OutlinedButton.icon(
+                    onPressed: controller.isPaused.value
+                        ? controller.resumeCollection
+                        : controller.pauseCollection,
+                    icon: Icon(
+                      controller.isPaused.value
+                          ? Icons.play_arrow
+                          : Icons.pause,
+                    ),
+                    label: Text(controller.isPaused.value ? 'Resume' : 'Pause'),
                   ),
-                  label: Text(
-                    controller.isPaused.value ? 'Resume' : 'Pause',
-                  ),
-                )),
+                ),
               ],
             ),
           ),
@@ -277,13 +317,13 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       ],
     );
   }
-  
+
   Widget _buildLiveVitals() {
     final sessionController = Get.find<SessionController>();
-    
+
     return Obx(() {
       final vitals = sessionController.latestVitals.value;
-      
+
       return Row(
         children: [
           Expanded(
@@ -322,7 +362,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       );
     });
   }
-  
+
   Widget _buildComplete() {
     return SingleChildScrollView(
       padding: AppSpacing.screenPadding,
@@ -330,26 +370,22 @@ class BaselineCollectionPage extends GetView<BaselineController> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 32),
-          
+
           // Success icon
-          const Icon(
-            Icons.check_circle,
-            size: 80,
-            color: AppColors.success,
-          ),
+          const Icon(Icons.check_circle, size: 80, color: AppColors.success),
           const SizedBox(height: 24),
-          
+
           Text(
             'Baseline Complete!',
             style: AppTypography.headlineSmall,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          
+
           // Results card
           Obx(() => _buildResultsCard()),
           const SizedBox(height: 24),
-          
+
           // Actions
           ElevatedButton(
             onPressed: controller.saveAndProceed,
@@ -364,11 +400,11 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       ),
     );
   }
-  
+
   Widget _buildResultsCard() {
     final baseline = controller.baselineData.value;
     if (baseline == null) return const SizedBox.shrink();
-    
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -379,21 +415,23 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Baseline Results',
-            style: AppTypography.titleMedium,
-          ),
+          Text('Baseline Results', style: AppTypography.titleMedium),
           const SizedBox(height: 16),
-          
+
           // Quality
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Data Quality', style: AppTypography.bodyMedium),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
-                  color: _getQualityColor(baseline.qualityScore).withOpacity(0.1),
+                  color: _getQualityColor(
+                    baseline.qualityScore,
+                  ).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -406,7 +444,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             ],
           ),
           const Divider(height: 24),
-          
+
           // Heart Rate
           _resultRow(
             'Heart Rate',
@@ -414,7 +452,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             '${baseline.heartRate.min.round()}-${baseline.heartRate.max.round()}',
           ),
           const SizedBox(height: 12),
-          
+
           // Respiratory Rate
           _resultRow(
             'Respiratory Rate',
@@ -422,7 +460,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             '${baseline.respiratoryRate.min.round()}-${baseline.respiratoryRate.max.round()}',
           ),
           const SizedBox(height: 12),
-          
+
           // Temperature
           _resultRow(
             'Temperature',
@@ -430,7 +468,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             '${baseline.temperature.min.toStringAsFixed(1)}-${baseline.temperature.max.toStringAsFixed(1)}',
           ),
           const Divider(height: 24),
-          
+
           // Duration
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -446,15 +484,12 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       ),
     );
   }
-  
+
   Widget _resultRow(String label, String value, String range) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 2,
-          child: Text(label, style: AppTypography.bodyMedium),
-        ),
+        Expanded(flex: 2, child: Text(label, style: AppTypography.bodyMedium)),
         Expanded(
           flex: 2,
           child: Text(
@@ -474,7 +509,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       ],
     );
   }
-  
+
   Color _getQualityColor(int quality) {
     if (quality >= 75) return AppColors.success;
     if (quality >= 50) return AppColors.warning;
