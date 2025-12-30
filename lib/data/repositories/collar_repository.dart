@@ -129,7 +129,7 @@ class CollarRepository {
   Stream<CollarDataPacket> get dataStream => _ble.dataStream;
 
   /// Check if connected
-  bool get isConnected => _ble.isConnected;
+  bool get isConnected => _ble.isConnected.value;
 
   /// Get remaining reconnect attempts
   int get remainingReconnectAttempts => _ble.remainingReconnectAttempts;

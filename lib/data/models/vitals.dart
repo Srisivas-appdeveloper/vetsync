@@ -256,3 +256,5 @@ class CollarDataPacket {
   String toString() =>
       'CollarDataPacket(type: 0x${packetType.toRadixString(16)}, seq: $sequenceNumber)';
 }
+
+typedef VitalSigns = Vitals;

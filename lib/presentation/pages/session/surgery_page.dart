@@ -84,16 +84,8 @@ class _SurgeryPageState extends State<SurgeryPage>
               // Surgery mode header
               _buildSurgeryHeader(),
 
-              // Status bar
-              Obx(
-                () => SessionStatusBar(
-                  collarId:
-                      _sessionController.currentCollar.value?.serialNumber,
-                  isConnected: _sessionController.isCollarConnected,
-                  batteryPercent: _sessionController.batteryPercent.value,
-                  signalQuality: _sessionController.signalQuality.value,
-                ),
-              ),
+              // Status bar (Fixed with Composite State)
+              _buildConnectionStatusBar(),
 
               // Main content
               Expanded(
@@ -138,6 +130,100 @@ class _SurgeryPageState extends State<SurgeryPage>
         ],
       ),
     );
+  }
+
+  Widget _buildConnectionStatusBar() {
+    return Obx(() {
+      final bool connected = _sessionController.isCollarConnected; // Composite
+      final bool reconnecting =
+          _bleService.connectionState.value == BleConnectionState.reconnecting;
+
+      // Determine display state
+      Color statusColor;
+      String statusText;
+      IconData statusIcon;
+
+      if (connected) {
+        statusColor = Colors.green;
+        statusText = 'Connected';
+        statusIcon = Icons.check_circle;
+      } else if (reconnecting) {
+        statusColor = Colors.orange;
+        statusText = 'Reconnecting...';
+        statusIcon = Icons.sync;
+      } else {
+        statusColor = Colors.red;
+        statusText = 'Disconnected';
+        statusIcon = Icons.error;
+      }
+
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: statusColor.withOpacity(0.1),
+        child: Row(
+          children: [
+            Icon(statusIcon, color: statusColor, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              statusText,
+              style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            // Collar ID
+            Text(
+              _sessionController.currentCollar.value?.serialNumber ?? '--',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(width: 16),
+            // Signal quality
+            Obx(
+              () => Row(
+                children: [
+                  Icon(
+                    Icons.signal_cellular_alt,
+                    size: 16,
+                    color: _getSignalColor(
+                      _sessionController.signalQuality.value,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text('${_sessionController.signalQuality.value}%'),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Battery
+            Obx(
+              () => Row(
+                children: [
+                  Icon(
+                    Icons.battery_std,
+                    size: 16,
+                    color: _getBatteryColor(
+                      _sessionController.batteryPercent.value,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text('${_sessionController.batteryPercent.value}%'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Color _getSignalColor(int quality) {
+    if (quality >= 80) return Colors.green;
+    if (quality >= 50) return Colors.orange;
+    return Colors.red;
+  }
+
+  Color _getBatteryColor(int level) {
+    if (level >= 35) return Colors.green;
+    if (level >= 20) return Colors.orange;
+    return Colors.red;
   }
 
   Widget _buildSurgeryHeader() {

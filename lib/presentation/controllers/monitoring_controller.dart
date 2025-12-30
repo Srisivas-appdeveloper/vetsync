@@ -26,7 +26,7 @@ class MonitoringController extends GetxController {
   Rx<FirmwareMode> get currentMode => _bleService.currentMode;
   bool get isStandardMode => currentMode.value == FirmwareMode.filtered;
   bool get isHighResMode => currentMode.value == FirmwareMode.raw;
-  bool get isConnected => _bleService.isConnected;
+  bool get isConnected => _bleService.isConnected.value;
 
   @override
   void onInit() {

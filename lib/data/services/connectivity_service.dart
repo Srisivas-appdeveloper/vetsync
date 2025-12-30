@@ -13,7 +13,7 @@ class ConnectivityService extends GetxService {
   final RxBool isOnline = false.obs;
 
   /// Stream subscription
-  StreamSubscription<ConnectivityResult>? _subscription;
+  StreamSubscription<List<ConnectivityResult>>? _subscription;
 
   @override
   void onInit() {
@@ -26,11 +26,33 @@ class ConnectivityService extends GetxService {
     final result = await _connectivity.checkConnectivity();
     _updateStatus(result);
 
-    // Listen for changes - onConnectivityChanged returns Stream<ConnectivityResult>
+    // Listen for changes - onConnectivityChanged returns Stream<List<ConnectivityResult>>
     _subscription = _connectivity.onConnectivityChanged.listen(_updateStatus);
   }
 
-  void _updateStatus(ConnectivityResult result) {
+  void _updateStatus(List<ConnectivityResult> results) {
+    ConnectivityResult result = ConnectivityResult.none;
+
+    if (results.isNotEmpty) {
+      if (results.contains(ConnectivityResult.ethernet)) {
+        result = ConnectivityResult.ethernet;
+      } else if (results.contains(ConnectivityResult.wifi)) {
+        result = ConnectivityResult.wifi;
+      } else if (results.contains(ConnectivityResult.mobile)) {
+        result = ConnectivityResult.mobile;
+      } else if (results.contains(ConnectivityResult.vpn)) {
+        result = ConnectivityResult.vpn;
+      } else if (results.contains(ConnectivityResult.bluetooth)) {
+        result = ConnectivityResult.bluetooth;
+      } else if (results.contains(ConnectivityResult.other)) {
+        result = ConnectivityResult.other;
+      } else if (results.contains(ConnectivityResult.none)) {
+        result = ConnectivityResult.none;
+      } else {
+        result = results.first;
+      }
+    }
+
     connectivityResult.value = result;
 
     // Update online status

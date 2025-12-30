@@ -14,8 +14,13 @@ import '../models/collar_packet_validated.dart' as validated;
 /// BLE service for collar communication
 class BleService extends GetxService {
   // Connection state
+  // Raw BLE Connection state
   final Rx<BleConnectionState> connectionState =
       BleConnectionState.disconnected.obs;
+
+  // Composite Connection State (BLE + Data)
+  final RxBool isConnected = false.obs;
+  final RxBool isDataStreaming = false.obs;
 
   // Connected device
   BluetoothDevice? _connectedDevice;
@@ -86,6 +91,24 @@ class BleService extends GetxService {
 
     // Listen to BCG service updates for Vitals
     _bcgService.addListener(_onBcgUpdate);
+
+    // Monitor raw connection and data streaming to update composite state
+    ever(connectionState, (_) => _checkCompositeConnectionState());
+    ever(isDataStreaming, (_) => _checkCompositeConnectionState());
+  }
+
+  void _checkCompositeConnectionState() {
+    final bool rawConnected =
+        connectionState.value == BleConnectionState.connected;
+    final bool streaming = isDataStreaming.value;
+    final bool composite = rawConnected && streaming;
+
+    if (isConnected.value != composite) {
+      isConnected.value = composite;
+      print(
+        '[BLE] Composite state changed: $composite (Raw: $rawConnected, Data: $streaming)',
+      );
+    }
   }
 
   /// Handle BCG Service updates
@@ -301,6 +324,10 @@ class BleService extends GetxService {
       await sendCommand(CollarCommand.startStream());
       print('Started data streaming from collar');
 
+      // Initialize streaming state
+      isDataStreaming.value = true; // Assume streaming starts shortly
+      _checkCompositeConnectionState();
+
       // Start keep-alive timer
       _startKeepAlive();
     } catch (e) {
@@ -310,40 +337,72 @@ class BleService extends GetxService {
     }
   }
 
-  /// Start keep-alive timer to maintain connection
+  /// Start keep-alive timer to maintain connection (Watchdog)
   void _startKeepAlive() {
     _keepAliveTimer?.cancel();
     _lastDataReceived = DateTime.now();
 
     _keepAliveTimer = Timer.periodic(_keepAliveInterval, (timer) async {
-      if (!isConnected) {
+      // If raw BLE is disconnected, stop logic
+      if (connectionState.value != BleConnectionState.connected) {
         timer.cancel();
         return;
       }
 
       final timeSinceLastData = DateTime.now().difference(_lastDataReceived!);
 
-      // Check for data timeout
+      // Check for data timeout (Data Watchdog)
       if (timeSinceLastData > _dataTimeout) {
-        print(
-          'Data timeout detected (${timeSinceLastData.inSeconds}s). No data received.',
-        );
-        // Connection might be stale, trigger reconnection
-        _onDisconnected();
+        if (isDataStreaming.value) {
+          print(
+            'Data timeout detected (${timeSinceLastData.inSeconds}s). No data received.',
+          );
+          isDataStreaming.value = false;
+          _checkCompositeConnectionState();
+
+          // Attempt recovery instead of immediate disconnect
+          _attemptDataRecovery();
+        }
         return;
+      } else {
+        // Data is flowing, ensure state is correct
+        if (!isDataStreaming.value) {
+          isDataStreaming.value = true;
+          _checkCompositeConnectionState();
+        }
       }
 
       // Send keep-alive status request
       try {
         await requestBattery();
-        print(
-          'Keep-alive ping sent (last data: ${timeSinceLastData.inSeconds}s ago)',
-        );
+        // print('Keep-alive ping sent');
       } catch (e) {
         print('Keep-alive failed: $e');
-        _onDisconnected();
+        // If keep-alive fails repeatedly, then disconnect
+        // For now, let the timeout logic handle it
       }
     });
+  }
+
+  /// Attempt data recovery without full disconnection
+  Future<void> _attemptDataRecovery() async {
+    print('[BLE] Attempting data recovery...');
+    try {
+      // Try re-enabling notifications
+      if (_dataCharacteristic != null) {
+        await _dataCharacteristic!.setNotifyValue(false);
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _dataCharacteristic!.setNotifyValue(true);
+        print('[BLE] Notifications re-enabled');
+
+        // Resend start stream command
+        await sendCommand(CollarCommand.startStream());
+      }
+    } catch (e) {
+      print('[BLE] Data recovery failed: $e');
+      // If recovery fails, trigger full reconnection logic
+      _onDisconnected();
+    }
   }
 
   /// Stop keep-alive timer
@@ -448,6 +507,13 @@ class BleService extends GetxService {
 
     // Update last data received timestamp
     _lastDataReceived = DateTime.now();
+
+    // Mark data as streaming
+    if (!isDataStreaming.value) {
+      print('[BLE] Data stream resumed');
+      isDataStreaming.value = true;
+      _checkCompositeConnectionState();
+    }
 
     final bytes = Uint8List.fromList(data);
 
@@ -586,8 +652,9 @@ class BleService extends GetxService {
     // await sendCommand(command);
   }
 
-  /// Check if connected
-  bool get isConnected => connectionState.value == BleConnectionState.connected;
+  /// Check if fully connected (Legacy getter replacement)
+  // bool get isConnected => connectionState.value == BleConnectionState.connected;
+  // Use the observable `isConnected` directly for composite state
 
   /// Get connected collar ID
   String? get connectedCollarId => connectedCollar.value?.collarId;

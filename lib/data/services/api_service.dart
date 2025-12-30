@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:get/get.dart' hide Response, FormData, MultipartFile;
 
 import '../../core/constants/app_config.dart';
+import '../models/vitals.dart';
 import 'storage_service.dart';
 
 /// API service for handling HTTP requests
@@ -131,6 +132,31 @@ class ApiService extends GetxService {
     } on DioException catch (e) {
       throw _handleError(e);
     }
+  }
+
+  /// Upload vitals batch
+  Future<Response> uploadVitalsBatch(
+    String sessionId,
+    List<Vitals> vitals,
+  ) async {
+    return post(
+      '/sessions/$sessionId/vitals/batch',
+      data: vitals.map((v) => v.toJson()).toList(),
+    );
+  }
+
+  /// Upload raw data chunk
+  Future<Response> uploadRawDataChunk({
+    required String sessionId,
+    required Map<String, String> headers,
+    required dynamic data,
+  }) async {
+    // Assuming binary upload or multipart
+    return post(
+      '/sessions/$sessionId/raw-data',
+      data: data,
+      options: Options(headers: headers),
+    );
   }
 
   /// Upload file

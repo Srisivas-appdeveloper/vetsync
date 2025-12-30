@@ -26,6 +26,12 @@ class SessionController extends GetxController {
   final Rx<Animal?> currentAnimal = Rx<Animal?>(null);
   final Rx<Collar?> currentCollar = Rx<Collar?>(null);
 
+  // Session state
+  final RxBool sessionPaused = false.obs;
+  // Helper to distinguish between ended vs paused
+  bool get isSessionActive =>
+      currentSession.value != null && currentSession.value!.endedAt == null;
+
   // Phase timing
   final Rx<DateTime?> sessionStartTime = Rx<DateTime?>(null);
   final Rx<DateTime?> surgeryStartTime = Rx<DateTime?>(null);
@@ -45,7 +51,9 @@ class SessionController extends GetxController {
   final RxString phaseDuration = '00:00:00'.obs;
 
   // Connection states
-  bool get isCollarConnected => _bleService.isConnected;
+  bool get isCollarConnected =>
+      _bleService.isConnected.value; // Use composite value
+
   bool get isLaptopConnected =>
       _wsService.connectionState.value == WebSocketState.connected;
   BleConnectionState get bleState => _bleService.connectionState.value;
@@ -84,21 +92,54 @@ class SessionController extends GetxController {
       _checkBatteryWarning(battery);
     });
 
-    // Listen to connection state
-    ever(_bleService.connectionState, _handleConnectionChange);
+    // Listen to COMPOSITE connection state
+    ever(_bleService.isConnected, _handleConnectionChange);
   }
 
-  /// Handle BLE connection state changes
-  void _handleConnectionChange(BleConnectionState state) {
-    if (state == BleConnectionState.disconnected &&
-        currentSession.value != null) {
-      // Reconnection is handled automatically by BleService
-      // Just show a notification
+  /// Handle BLE connection state changes (Composite)
+  void _handleConnectionChange(bool connected) {
+    if (!isSessionActive) return;
+
+    if (!connected) {
+      // Disconnected: Show warning and start auto-pause timer
       Get.snackbar(
         'Connection Lost',
         'Attempting to reconnect to collar...',
         duration: const Duration(seconds: 3),
+        backgroundColor: Colors.orange[100],
+        colorText: Colors.black,
+        icon: const Icon(Icons.warning, color: Colors.orange),
       );
+
+      // Auto-pause after 60 seconds if not reconnected
+      Future.delayed(const Duration(seconds: 60), () {
+        if (!_bleService.isConnected.value && isSessionActive) {
+          print('[Session] Auto-pausing session due to extended disconnection');
+          pauseSession();
+
+          Get.snackbar(
+            'Session Paused',
+            'Session paused due to collar disconnection',
+            snackPosition: SnackPosition.TOP,
+            backgroundColor: Colors.orange[100],
+            duration: const Duration(seconds: 5),
+            icon: const Icon(Icons.pause, color: Colors.orange),
+          );
+        }
+      });
+    } else {
+      // Connected: Resume if needed
+      if (sessionPaused.value) {
+        resumeSession();
+        Get.snackbar(
+          'Session Resumed',
+          'Monitoring resumed after reconnection',
+          snackPosition: SnackPosition.TOP,
+          backgroundColor: Colors.green[100],
+          duration: const Duration(seconds: 3),
+          icon: const Icon(Icons.check_circle, color: Colors.green),
+        );
+      }
     }
   }
 
@@ -493,5 +534,18 @@ class SessionController extends GetxController {
     await _storage.setActiveSessionId(null);
     clearSession();
     Get.offAllNamed(Routes.dashboard);
+  }
+
+  void pauseSession() {
+    sessionPaused.value = true;
+    _durationTimer?.cancel();
+    // Add annotation
+    _addSystemAnnotation('Session paused (Auto-pause)');
+  }
+
+  void resumeSession() {
+    sessionPaused.value = false;
+    _startDurationTimer();
+    _addSystemAnnotation('Session resumed');
   }
 }

@@ -144,7 +144,7 @@ class CollarScanController extends GetxController {
       // Connect via BLE - pass the DiscoveredCollar object
       await _bleService.connect(collar);
 
-      if (!_bleService.isConnected) {
+      if (!_bleService.isConnected.value) {
         throw Exception('Connection failed');
       }
 

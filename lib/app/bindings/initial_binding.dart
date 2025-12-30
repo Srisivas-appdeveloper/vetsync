@@ -13,6 +13,13 @@ import '../../data/repositories/annotation_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/collar_repository.dart';
 import '../../data/repositories/session_repository.dart';
+import '../../database/sqlite_service.dart';
+import '../../services/dual_upload_service.dart';
+import '../../services/surgery_data_router.dart';
+import '../../services/calibration_service.dart';
+import '../../services/bcg_processor_service.dart';
+import '../../services/network_queue_manager.dart';
+import '../../services/ble_service.dart';
 
 /// Initial binding - registers global services at app startup
 class InitialBinding extends Bindings {
@@ -28,6 +35,18 @@ class InitialBinding extends Bindings {
     Get.put(BleService(), permanent: true);
     Get.put(WebSocketService(), permanent: true);
     Get.put(SyncService(), permanent: true);
+
+    // V3.2.0 Services
+    Get.put(SQLiteService(), permanent: true);
+    Get.put(DualUploadService(), permanent: true);
+    Get.put(SurgeryDataRouter(), permanent: true);
+    Get.put(CalibrationService(), permanent: true);
+    Get.put(BCGProcessorService(), permanent: true);
+    Get.put(NetworkQueueManager(), permanent: true);
+    Get.put(
+      BLEService(),
+      permanent: true,
+    ); // Different from BleService (legacy)
 
     // Repositories (lazy - created on first access)
     Get.lazyPut(() => AuthRepository(), fenix: true);
