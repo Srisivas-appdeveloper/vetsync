@@ -10,7 +10,7 @@ class AppConfig {
   // API Configuration
 
   static const String baseUrl = 'https://api.snoots.in';
-  static const String wsUrl = 'wss://api.vetsync.com/ws';
+  static const String wsUrl = 'wss://api.snoots.in';
   static const Duration apiTimeout = Duration(seconds: 30);
   static const int maxRetries = 3;
 
@@ -25,6 +25,12 @@ class AppConfig {
   // BLE Scan Configuration
   static const Duration bleScanTimeout = Duration(seconds: 10);
   static const Duration bleConnectionTimeout = Duration(seconds: 15);
+
+  // BLE Connectivity Optimization
+  static const int targetMtuSize = 247; // Optimal MTU for efficient data transfer
+  static const Duration rssiMonitorInterval = Duration(seconds: 10);
+  static const int minAcceptableRssi = -90; // dBm, below this = poor connection
+  static const double maxCrcErrorRate = 0.1; // 10% max error rate
 
   // Reconnection Configuration
   static const int maxReconnectAttempts = 12;

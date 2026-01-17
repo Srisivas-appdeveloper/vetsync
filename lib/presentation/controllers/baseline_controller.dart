@@ -49,6 +49,14 @@ class BaselineController extends GetxController {
   int _packetCount = 0;
   DateTime? _startTime;
 
+  // No signal warning
+  final RxBool showNoSignalWarning = false.obs;
+  Timer? _noSignalCheckTimer;
+
+  // Processing status for better user feedback
+  final RxString processingStatus = 'Waiting for data...'.obs;
+  final RxInt bufferedSamplesCount = 0.obs;
+
   // Real-time vitals
   Vitals? get latestVitals => _sessionController.latestVitals.value;
   int get signalQuality => _sessionController.signalQuality.value;
@@ -66,6 +74,7 @@ class BaselineController extends GetxController {
   void onClose() {
     _timer?.cancel();
     _vitalsSubscription?.cancel();
+    _noSignalCheckTimer?.cancel();
     super.onClose();
   }
 
@@ -76,18 +85,36 @@ class BaselineController extends GetxController {
 
       // === DEBUG LOGGING ===
       _packetCount++;
+
+      // Update processing status for UI feedback
+      if (_packetCount == 1) {
+        processingStatus.value = 'First data received, buffering...';
+      } else if (_packetCount < 10) {
+        processingStatus.value = 'Buffering samples... ($_packetCount/10)';
+      } else if (currentQuality.value == 0) {
+        processingStatus.value =
+            'Analyzing signal quality... (${_packetCount} samples)';
+      } else {
+        processingStatus.value = 'Processing vital signs...';
+      }
+      bufferedSamplesCount.value = _packetCount;
+
       if (_packetCount % 100 == 0 && _startTime != null) {
         final elapsed = DateTime.now().difference(_startTime!);
         final rate = elapsed.inSeconds > 0
             ? _packetCount / elapsed.inSeconds
             : 0.0;
         print('═══════════════════════════════════════════════════════');
-        print('[BASELINE] Packets: $_packetCount');
+        print('[BASELINE] Vitals received: $_packetCount');
         print(
-          '[BASELINE] Rate: ${rate.toStringAsFixed(1)} Hz (target: 100 Hz)',
+          '[BASELINE] Vitals rate: ${rate.toStringAsFixed(1)} Hz (BCG batch processing rate)',
         );
-        print('[BASELINE] Quality: ${vitals.signalQuality}% (IGNORED)');
+        print('[BASELINE] Signal Quality: ${vitals.signalQuality}%');
         print('[BASELINE] Battery: $batteryPercent%');
+        print('[BASELINE] HR: ${vitals.heartRateBpm.toStringAsFixed(1)} bpm');
+        print(
+          '[BASELINE] RR: ${vitals.respiratoryRateBpm.toStringAsFixed(1)} brpm',
+        );
         print('═══════════════════════════════════════════════════════');
       }
       // === END DEBUG LOGGING ===
@@ -160,6 +187,18 @@ class BaselineController extends GetxController {
     // Reset debug counters
     _packetCount = 0;
     _startTime = DateTime.now();
+    showNoSignalWarning.value = false;
+    processingStatus.value = 'Waiting for data...';
+    bufferedSamplesCount.value = 0;
+
+    // Check for no signal after 60 seconds
+    _noSignalCheckTimer?.cancel();
+    _noSignalCheckTimer = Timer(const Duration(seconds: 60), () {
+      // If still no valid vitals after 60 seconds, show warning
+      if (validSamples.value == 0 && currentQuality.value == 0) {
+        showNoSignalWarning.value = true;
+      }
+    });
 
     // Start timer
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {

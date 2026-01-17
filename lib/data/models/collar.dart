@@ -151,7 +151,7 @@ class DiscoveredCollar {
         return 'blue';
       case SignalStrength.fair:
         return 'yellow';
-      case SignalStrength.poor:
+      case SignalStrength.weak:
         return 'red';
     }
   }

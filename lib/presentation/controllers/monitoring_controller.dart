@@ -4,6 +4,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../data/services/ble_service.dart';
 import '../../services/bcg_service.dart';
 import '../../data/models/models.dart';
+import 'dart:async';
+import 'dart:collection';
+import 'package:fl_chart/fl_chart.dart';
 import '../../core/algorithms/bcg_algorithm.dart';
 
 class MonitoringController extends GetxController {
@@ -22,6 +25,17 @@ class MonitoringController extends GetxController {
   // Local UI state
   final RxBool isStreaming = false.obs;
 
+  // Waveform Visualization
+  static const int maxWaveformSamples = 1000; // 5s @ 200Hz or 10s @ 100Hz
+  final RxList<FlSpot> waveformSpots = RxList<FlSpot>([]);
+  final Queue<double> _waveformBuffer = Queue<double>();
+
+  // Connection Watchdog
+  DateTime? _lastDataTime;
+  Timer? _watchdogTimer;
+  final RxBool isDataActive = false.obs; // True if receiving data recently
+  StreamSubscription? _rawStreamSubscription;
+
   // Computed
   Rx<FirmwareMode> get currentMode => _bleService.currentMode;
   bool get isStandardMode => currentMode.value == FirmwareMode.filtered;
@@ -31,8 +45,21 @@ class MonitoringController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // Listen to changes to trigger UI updates if needed
-    // The VitalSignsDisplay handles its own updates if we pass reactive values or trigger rebuilds
+
+    // Listen to raw data stream
+    _rawStreamSubscription = bcgService.rawDataStream.listen(
+      _onRawDataReceived,
+    );
+
+    // Start watchdog to update active status
+    _startWatchdog();
+  }
+
+  @override
+  void onClose() {
+    _rawStreamSubscription?.cancel();
+    _watchdogTimer?.cancel();
+    super.onClose();
   }
 
   // Actions
@@ -72,5 +99,64 @@ class MonitoringController extends GetxController {
   void connectToDevice(BluetoothDevice device) {
     // This might be handled by a separate scan controller,
     // but if we are here we assume we might be viewing an active session
+  }
+
+  // --- Waveform Logic ---
+
+  void _onRawDataReceived(List<int> samples) {
+    _lastDataTime = DateTime.now();
+    if (!isDataActive.value) isDataActive.value = true;
+
+    // Debug logging (only log occasionally to avoid spam)
+    if (_waveformBuffer.isEmpty || _waveformBuffer.length % 100 == 0) {
+      print('[MON] 📊 Waveform data: ${samples.length} samples, buffer size: ${_waveformBuffer.length}, first value: ${samples.isNotEmpty ? samples.first : "empty"}');
+    }
+
+    // Adjust buffer for raw samples depending on resolution
+    // Standard: 100Hz, High-Res: 128Hz
+    // We just plot them sequentially for now
+
+    for (final sample in samples) {
+      _waveformBuffer.add(sample.toDouble());
+      if (_waveformBuffer.length > maxWaveformSamples) {
+        _waveformBuffer.removeFirst();
+      }
+    }
+
+    _updateWaveformSpots();
+  }
+
+  void _updateWaveformSpots() {
+    // Create spots from buffer
+    // X-axis: simply index or relative time
+    final spots = <FlSpot>[];
+    int index = 0;
+
+    // Downsample for rendering performance if needed, but for 1000 points it's fine
+    // Or just take last N points
+
+    for (final val in _waveformBuffer) {
+      spots.add(FlSpot(index.toDouble(), val));
+      index++;
+    }
+
+    waveformSpots.assignAll(spots);
+  }
+
+  void _startWatchdog() {
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_lastDataTime == null) {
+        isDataActive.value = false;
+        return;
+      }
+
+      final diff = DateTime.now().difference(_lastDataTime!);
+      // Increased timeout from 5s to 15s to match BLE service improvements
+      if (diff.inSeconds > 15) {
+        isDataActive.value = false;
+      } else {
+        isDataActive.value = true;
+      }
+    });
   }
 }

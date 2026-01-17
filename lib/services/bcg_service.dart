@@ -1,5 +1,6 @@
 // lib/services/bcg_service.dart
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../core/algorithms/bcg_algorithm.dart';
 import '../data/models/collar_packet_validated.dart';
@@ -29,6 +30,10 @@ class BcgService extends ChangeNotifier {
   int _currentMode =
       BlePacketTypes.modeFiltered; // Default to filtered/standard
 
+  // Stream for raw pressure data (waveform visualization)
+  final _rawDataController = StreamController<List<int>>.broadcast();
+  Stream<List<int>> get rawDataStream => _rawDataController.stream;
+
   /// Get latest BCG processing result
   BcgResult? get latestResult => _latestResult;
 
@@ -57,18 +62,49 @@ class BcgService extends ChangeNotifier {
     'bufferLength': _algorithm.bufferLengthSeconds,
   };
 
+  // Debug counters for rate tracking
+  int _totalSamplesReceived = 0;
+  DateTime? _rateCheckStartTime;
+
   /// Process incoming collar packet
   /// Call this on every BLE packet received
   void onPacketReceived(CollarPacket packet) {
     _totalPackets++;
 
+    // Track sample rate (first 10 seconds)
+    final samplesInPacket = packet.pressures.length;
+    _totalSamplesReceived += samplesInPacket;
+
+    if (_rateCheckStartTime == null) {
+      _rateCheckStartTime = DateTime.now();
+    }
+
+    final elapsed = DateTime.now().difference(_rateCheckStartTime!);
+    if (elapsed.inSeconds >= 10 && elapsed.inSeconds < 11) {
+      final actualSampleRate = _totalSamplesReceived / elapsed.inSeconds;
+      debugPrint(
+        '[BCG] 📊 Sample Rate Check: '
+        '${actualSampleRate.toStringAsFixed(1)} Hz '
+        '(${_totalSamplesReceived} samples in ${elapsed.inSeconds}s, '
+        '${_totalPackets} packets, '
+        '${(samplesInPacket)} samples/packet)',
+      );
+    }
+
     // Store temperature (updated on every packet)
     _latestTemperatureRaw = packet.temperatureRaw;
 
-    // Add pressure to batch
-    _pressureBatch.add(packet.pressure);
+    // Add all aggregated pressures to batch and stream
+    for (final pressure in packet.pressures) {
+      _pressureBatch.add(pressure);
+    }
 
-    // Process batch when full
+    // Emit all new samples to raw stream
+    if (packet.pressures.isNotEmpty) {
+      _rawDataController.add(packet.pressures);
+    }
+
+    // Process batch if full
     if (_pressureBatch.length >= _batchSize) {
       _processBatch();
     }
@@ -82,6 +118,34 @@ class BcgService extends ChangeNotifier {
       // Run BCG algorithm on batch
       final result = _algorithm.processSamples(_pressureBatch);
       _processedBatches++;
+
+      // Log first few batches for debugging
+      if (_processedBatches <= 3) {
+        debugPrint(
+          '[BCG] 🎯 Batch #$_processedBatches processed: '
+          'HR=${result.heartRateBpm.toStringAsFixed(1)} bpm, '
+          'RR=${result.respiratoryRateBpm.toStringAsFixed(1)} brpm, '
+          'Quality=${result.signalQuality}%, '
+          'Valid=${result.isValid}',
+        );
+      }
+
+      // Debug logging for signal validation
+      if (result.isValid) {
+        // debugPrint(
+        //   '[BCG] ✅ VALID signal - HR: ${result.heartRateBpm} BPM (conf: ${(result.hrConfidence * 100).toInt()}%), RR: ${result.respiratoryRateBpm} BPM (conf: ${(result.rrConfidence * 100).toInt()}%), Quality: ${result.signalQuality}%',
+        // );
+      } else {
+        // Log why it's invalid
+        final reasons = <String>[];
+        if (result.hrConfidence <= 0.3)
+          reasons.add('HR conf low (${(result.hrConfidence * 100).toInt()}%)');
+        if (result.rrConfidence <= 0.3)
+          reasons.add('RR conf low (${(result.rrConfidence * 100).toInt()}%)');
+        // debugPrint(
+        //   '[BCG] ❌ INVALID signal - ${reasons.join(", ")} - Quality: ${result.signalQuality}% (UI shows "Collecting data...")',
+        // );
+      }
 
       // Update latest result
       _latestResult = result;
@@ -149,6 +213,10 @@ class BcgService extends ChangeNotifier {
     _processedBatches = 0;
     _invalidResults = 0;
 
+    // Reset rate tracking
+    _totalSamplesReceived = 0;
+    _rateCheckStartTime = null;
+
     notifyListeners();
   }
 
@@ -175,6 +243,7 @@ class BcgService extends ChangeNotifier {
   @override
   void dispose() {
     flush();
+    _rawDataController.close();
     super.dispose();
   }
 }

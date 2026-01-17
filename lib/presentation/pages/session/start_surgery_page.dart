@@ -202,7 +202,9 @@ class _StartSurgeryPageState extends State<StartSurgeryPage> {
           const SizedBox(height: 8),
           _infoRow('Collar', collar?.serialNumber ?? '-'),
           const SizedBox(height: 8),
-          _infoRow('Battery', '${collar?.batteryPercent ?? 0}%'),
+          _infoRow('Battery', collar?.batteryPercent != null
+            ? '${collar!.batteryPercent}%'
+            : '--'),
         ],
       ),
     );

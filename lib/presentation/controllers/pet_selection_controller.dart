@@ -13,7 +13,7 @@ class PetSelectionController extends GetxController {
   final SessionController _sessionController = Get.find<SessionController>();
 
   // Search
-  final searchController = TextEditingController();
+  late final TextEditingController searchController;
   final RxString searchQuery = ''.obs;
   Timer? _debounceTimer;
 
@@ -27,6 +27,8 @@ class PetSelectionController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Initialize controller in onInit to avoid hot reload issues
+    searchController = TextEditingController();
     _loadRecentAnimals();
 
     // Setup search debounce
@@ -135,19 +137,32 @@ class AddPetController extends GetxController {
   final formKey = GlobalKey<FormState>();
 
   // Form controllers
-  final nameController = TextEditingController();
-  final ownerNameController = TextEditingController();
-  final ownerPhoneController = TextEditingController();
-  final ownerEmailController = TextEditingController();
-  final weightController = TextEditingController();
-  final ageController = TextEditingController();
-  final notesController = TextEditingController();
+  late final TextEditingController nameController;
+  late final TextEditingController ownerNameController;
+  late final TextEditingController ownerPhoneController;
+  late final TextEditingController ownerEmailController;
+  late final TextEditingController weightController;
+  late final TextEditingController ageController;
+  late final TextEditingController notesController;
 
   // Form state
   final Rx<Species> species = Species.dog.obs;
   final RxString breed = ''.obs;
   final Rx<Sex> sex = Sex.male.obs;
   final RxBool isLoading = false.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    // Initialize controllers in onInit to avoid hot reload issues
+    nameController = TextEditingController();
+    ownerNameController = TextEditingController();
+    ownerPhoneController = TextEditingController();
+    ownerEmailController = TextEditingController();
+    weightController = TextEditingController();
+    ageController = TextEditingController();
+    notesController = TextEditingController();
+  }
 
   @override
   void onClose() {

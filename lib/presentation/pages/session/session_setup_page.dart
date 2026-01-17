@@ -202,12 +202,14 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                     children: [
                       Icon(
                         Icons.battery_std,
-                        color: AppColors.getBatteryColor(collar?.batteryPercent ?? 100),
+                        color: AppColors.getBatteryColor(collar?.batteryPercent ?? 0),
                         size: 16,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '${collar?.batteryPercent ?? 100}%',
+                        collar?.batteryPercent != null
+                          ? '${collar!.batteryPercent}%'
+                          : '--',
                         style: AppTypography.bodySmall,
                       ),
                     ],

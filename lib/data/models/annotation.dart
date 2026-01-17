@@ -20,7 +20,7 @@ class Annotation {
   final String? potentialDuplicateOf;
   final DateTime? createdAt;
   final SyncStatus syncStatus;
-  
+
   Annotation({
     this.id,
     required this.sessionId,
@@ -41,14 +41,14 @@ class Annotation {
     this.createdAt,
     this.syncStatus = SyncStatus.pending,
   });
-  
+
   /// Get elapsed time as formatted string
   String get elapsedTimeFormatted {
     final totalSeconds = elapsedMs ~/ 1000;
     final hours = totalSeconds ~/ 3600;
     final minutes = (totalSeconds % 3600) ~/ 60;
     final seconds = totalSeconds % 60;
-    
+
     if (hours > 0) {
       return '${hours}h ${minutes}m ${seconds}s';
     } else if (minutes > 0) {
@@ -56,7 +56,7 @@ class Annotation {
     }
     return '${seconds}s';
   }
-  
+
   /// Get display title
   String get displayTitle {
     if (description != null && description!.isNotEmpty) {
@@ -64,20 +64,20 @@ class Annotation {
     }
     return '${category.displayName}: $type';
   }
-  
+
   /// Get timestamp formatted
   String get timeFormatted {
     return '${timestampUtc.hour.toString().padLeft(2, '0')}:'
-           '${timestampUtc.minute.toString().padLeft(2, '0')}:'
-           '${timestampUtc.second.toString().padLeft(2, '0')}';
+        '${timestampUtc.minute.toString().padLeft(2, '0')}:'
+        '${timestampUtc.second.toString().padLeft(2, '0')}';
   }
-  
+
   /// Check if annotation has voice note
   bool get hasVoiceNote => voiceNotePath != null || voiceNoteUrl != null;
-  
+
   /// Check if synced
   bool get isSynced => syncStatus == SyncStatus.synced;
-  
+
   factory Annotation.fromJson(Map<String, dynamic> json) {
     return Annotation(
       id: json['annotation_id'] as String? ?? json['id'] as String?,
@@ -88,7 +88,9 @@ class Annotation {
       category: AnnotationCategory.fromString(json['category'] as String),
       type: json['type'] as String,
       description: json['description'] as String?,
-      severity: AnnotationSeverity.fromString(json['severity'] as String? ?? 'info'),
+      severity: AnnotationSeverity.fromString(
+        json['severity'] as String? ?? 'info',
+      ),
       structuredData: json['structured_data'] as Map<String, dynamic>?,
       voiceNotePath: json['voice_note_path'] as String?,
       voiceNoteUrl: json['voice_note_url'] as String?,
@@ -99,10 +101,12 @@ class Annotation {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
-      syncStatus: SyncStatus.fromString(json['sync_status'] as String? ?? 'synced'),
+      syncStatus: SyncStatus.fromString(
+        json['sync_status'] as String? ?? 'synced',
+      ),
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'annotation_id': id,
@@ -125,7 +129,7 @@ class Annotation {
       'sync_status': syncStatus.value,
     };
   }
-  
+
   Annotation copyWith({
     String? id,
     String? sessionId,
@@ -167,15 +171,16 @@ class Annotation {
       syncStatus: syncStatus ?? this.syncStatus,
     );
   }
-  
+
   @override
-  String toString() => 'Annotation(id: $id, type: $type, category: ${category.value})';
+  String toString() =>
+      'Annotation(id: $id, type: $type, category: ${category.value})';
 }
 
 /// Predefined annotation types for quick selection
 class AnnotationTypes {
   AnnotationTypes._();
-  
+
   // Anesthesia types
   static const List<String> anesthesia = [
     'Induction',
@@ -187,7 +192,7 @@ class AnnotationTypes {
     'Infusion stopped',
     'Recovery medication',
   ];
-  
+
   // Medication types
   static const List<String> medication = [
     'Analgesic',
@@ -199,7 +204,7 @@ class AnnotationTypes {
     'Reversal agent',
     'Other medication',
   ];
-  
+
   // Preparation types
   static const List<String> preparation = [
     'IV catheter placed',
@@ -211,7 +216,7 @@ class AnnotationTypes {
     'Monitoring attached',
     'Warming device',
   ];
-  
+
   // Surgical types
   static const List<String> surgical = [
     'Incision',
@@ -223,7 +228,7 @@ class AnnotationTypes {
     'Suture placed',
     'Complication',
   ];
-  
+
   // Event types
   static const List<String> event = [
     'Movement detected',
@@ -234,7 +239,7 @@ class AnnotationTypes {
     'Temperature adjustment',
     'Artifact noted',
   ];
-  
+
   // Recovery types
   static const List<String> recovery = [
     'First movement',
@@ -246,7 +251,7 @@ class AnnotationTypes {
     'Alert and responsive',
     'Transferred to kennel',
   ];
-  
+
   // Behavior types
   static const List<String> behavior = [
     'Vocalizing',
@@ -258,7 +263,7 @@ class AnnotationTypes {
     'Seeking attention',
     'Resting comfortably',
   ];
-  
+
   // Emergency types
   static const List<String> emergency = [
     'Cardiac arrest',

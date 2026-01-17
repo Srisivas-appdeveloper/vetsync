@@ -278,6 +278,17 @@ class SessionController extends GetxController {
         SessionPhase.surgery,
       );
 
+      // 🔥 NEW: Connect to websocket for real-time data streaming
+      try {
+        await _wsService.connectToRelay(
+          sessionId: currentSession.value!.id,
+        );
+        print('[Session] 📡 WebSocket connected for surgery monitoring');
+      } catch (e) {
+        print('[Session] ⚠️ WebSocket connection failed: $e');
+        // Continue anyway - websocket is optional for offline mode
+      }
+
       // Switch collar to raw mode for calibration
       await _bleService.switchMode(
         FirmwareMode.raw,
@@ -366,6 +377,9 @@ class SessionController extends GetxController {
     try {
       // endSession takes positional argument
       await _sessionRepo.endSession(currentSession.value!.id);
+
+      // Disconnect websocket
+      await _wsService.disconnect();
 
       // Disconnect collar
       await _bleService.disconnect();

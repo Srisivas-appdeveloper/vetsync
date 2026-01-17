@@ -35,8 +35,8 @@ class _WaveformDisplayState extends State<WaveformDisplay> {
   final List<FlSpot> _dataPoints = [];
   StreamSubscription<CollarDataPacket>? _dataSubscription;
   int _sampleIndex = 0;
-  double _minY = -1000;
-  double _maxY = 1000;
+  double? _minY;
+  double? _maxY;
 
   @override
   void initState() {
@@ -64,8 +64,19 @@ class _WaveformDisplayState extends State<WaveformDisplay> {
 
         // Update Y bounds if auto-scaling
         if (widget.autoScale) {
-          if (sample < _minY) _minY = sample.toDouble();
-          if (sample > _maxY) _maxY = sample.toDouble();
+          if (_minY == null || sample < _minY!) {
+            _minY = sample.toDouble();
+          }
+          if (_maxY == null || sample > _maxY!) {
+            _maxY = sample.toDouble();
+          }
+
+          // Ensure minimum range for visibility
+          if (_maxY! - _minY! < 100) {
+            final center = (_maxY! + _minY!) / 2;
+            _minY = center - 50;
+            _maxY = center + 50;
+          }
         }
 
         // Keep only the latest maxDataPoints
@@ -129,7 +140,7 @@ class _WaveformDisplayState extends State<WaveformDisplay> {
                       gridData: FlGridData(
                         show: widget.showGrid,
                         drawVerticalLine: false,
-                        horizontalInterval: (_maxY - _minY) / 4,
+                        horizontalInterval: (_maxY! - _minY!) / 4,
                         getDrawingHorizontalLine: (value) {
                           return FlLine(
                             color: AppColors.border.withValues(alpha: 0.3),
@@ -153,8 +164,8 @@ class _WaveformDisplayState extends State<WaveformDisplay> {
                           ),
                         ),
                       ],
-                      minY: _minY - ((_maxY - _minY) * 0.1),
-                      maxY: _maxY + ((_maxY - _minY) * 0.1),
+                      minY: _minY! - ((_maxY! - _minY!) * 0.1),
+                      maxY: _maxY! + ((_maxY! - _minY!) * 0.1),
                       lineTouchData: const LineTouchData(enabled: false),
                       clipData: const FlClipData.all(),
                     ),

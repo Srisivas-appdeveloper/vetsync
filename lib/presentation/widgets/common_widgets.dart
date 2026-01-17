@@ -230,26 +230,61 @@ class VitalCard extends StatelessWidget {
 
   Widget _buildCompact(Color displayColor) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: displayColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16, color: displayColor),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            value,
-            style: AppTypography.titleMedium.copyWith(color: displayColor),
+          // Label with icon
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 14, color: displayColor),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: displayColor,
+                    fontSize: 10,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
-          Text(
-            unit,
-            style: AppTypography.bodySmall.copyWith(color: displayColor),
+          const SizedBox(height: 4),
+          // Value and unit
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Flexible(
+                child: Text(
+                  value,
+                  style: AppTypography.titleMedium.copyWith(
+                    color: displayColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Text(
+                unit,
+                style: AppTypography.caption.copyWith(color: displayColor),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ],
       ),

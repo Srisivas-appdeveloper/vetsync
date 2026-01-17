@@ -103,6 +103,12 @@ abstract class CollarResponse {
           return null;
       }
     } catch (e) {
+      // Note: 0xB1 is used for both battery responses AND data packets
+      // Data packets (27+ bytes) will fail length check - this is expected
+      if (responseId == CollarResponseId.battery && bytes.length >= 27) {
+        // Silently ignore - this is a data packet, not a response
+        return null;
+      }
       print('Error parsing response 0x${responseId.toRadixString(16)}: $e');
       return null;
     }
@@ -194,7 +200,15 @@ class BatteryResponse extends CollarResponse {
   factory BatteryResponse.fromBytes(Uint8List bytes) {
     // Structure assumed from context (0xB1 packet)
     // Let's assume: [ID, Battery%, ChargingStatus, Checksum]
-    if (bytes.length < 2) throw Exception('Invalid battery response length');
+    //
+    // CRITICAL: 0xB1 is used for BOTH:
+    // 1. Battery RESPONSE (3-4 bytes): [0xB1, Battery%, Charging, Checksum]
+    // 2. Battery DATA PACKET (27+ bytes): Full packet with timestamp, pressure, IMU, etc.
+    //
+    // We must distinguish by length to avoid reading timestamp bytes as battery %
+    if (bytes.length < 3 || bytes.length > 10) {
+      throw Exception('Invalid battery response length: ${bytes.length} bytes (expected 3-10)');
+    }
 
     return BatteryResponse(
       batteryPercent: bytes[1],

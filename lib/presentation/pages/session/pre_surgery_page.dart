@@ -167,61 +167,79 @@ class PreSurgeryPage extends StatelessWidget {
       final animal = sessionController.currentAnimal.value;
       final ranges = animal?.vitalRanges;
 
-      return Row(
-        children: [
-          Expanded(
-            child: VitalCard(
-              label: 'Heart Rate',
-              value: vitals?.heartRateBpm.toString() ?? '--',
-              unit: 'bpm',
-              icon: Icons.favorite,
-              range: ranges?.heartRate,
-              currentValue: vitals?.heartRateBpm.toDouble(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: VitalCard(
-              label: 'Resp Rate',
-              value: vitals?.respiratoryRateBpm.toString() ?? '--',
-              unit: 'brpm',
-              icon: Icons.air,
-              range: ranges?.respiratoryRate,
-              currentValue: vitals?.respiratoryRateBpm.toDouble(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: VitalCard(
-              label: 'Temp',
-              value: vitals?.temperatureC.toStringAsFixed(1) ?? '--',
-              unit: '°C',
-              icon: Icons.thermostat,
-              range: ranges?.temperature,
-              currentValue: vitals?.temperatureC,
-            ),
-          ),
-        ],
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          // Use Row layout for normal screens, adjust sizing for very small screens
+          final isSmallScreen = constraints.maxWidth < 360;
+
+          return Row(
+            children: [
+              Expanded(
+                child: VitalCard(
+                  label: 'Heart Rate',
+                  value: vitals?.heartRateBpm.toString() ?? '--',
+                  unit: 'bpm',
+                  icon: Icons.favorite,
+                  range: ranges?.heartRate,
+                  currentValue: vitals?.heartRateBpm.toDouble(),
+                  compact: isSmallScreen,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: VitalCard(
+                  label: 'Resp Rate',
+                  value: vitals?.respiratoryRateBpm.toString() ?? '--',
+                  unit: 'brpm',
+                  icon: Icons.air,
+                  range: ranges?.respiratoryRate,
+                  currentValue: vitals?.respiratoryRateBpm.toDouble(),
+                  compact: isSmallScreen,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: VitalCard(
+                  label: 'Temp',
+                  value: vitals?.temperatureC.toStringAsFixed(1) ?? '--',
+                  unit: '°C',
+                  icon: Icons.thermostat,
+                  range: ranges?.temperature,
+                  currentValue: vitals?.temperatureC,
+                  compact: isSmallScreen,
+                ),
+              ),
+            ],
+          );
+        },
       );
     });
   }
 
   Widget _buildWaveformSection() {
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: const RealtimeWaveformChart(
-        displaySeconds: 10,
-        sampleRate: 100,
-        minY: -1.0,
-        maxY: 1.0,
-        title: 'BCG Signal',
-        lineColor: AppColors.info,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Use 25% of screen height or minimum 180px for waveform
+        final screenHeight = MediaQuery.of(context).size.height;
+        final waveformHeight = (screenHeight * 0.25).clamp(180.0, 300.0);
+
+        return Container(
+          height: waveformHeight,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const RealtimeWaveformChart(
+            displaySeconds: 10,
+            sampleRate: 100,
+            minY: -1.0,
+            maxY: 1.0,
+            title: 'BCG Signal',
+            lineColor: AppColors.info,
+          ),
+        );
+      },
     );
   }
 

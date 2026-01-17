@@ -10,13 +10,18 @@ import '../../utils/crc_utils.dart';
 /// - Timestamp validation
 /// - Physiological range checking
 /// - Detailed error messages
+///
+/// IMPORTANT: The timestamp field is in MICROSECONDS, not milliseconds!
+/// The firmware uses microseconds for higher precision timing.
 class CollarPacket {
   // Header
   final int packetType;
-  final int timestampMs;
+  final int timestampUs; // ⚠️ Microseconds, not milliseconds!
 
   // Pressure data
-  final int pressure;
+  // Pressure data
+  // final int pressure; (Deprecated, use pressures.first)
+  final List<int> pressures; // 🔥 Changed to list for aggregation
 
   // Mode-specific byte 7
   final int _byte7;
@@ -41,8 +46,8 @@ class CollarPacket {
 
   CollarPacket._({
     required this.packetType,
-    required this.timestampMs,
-    required this.pressure,
+    required this.timestampUs,
+    required this.pressures,
     required int byte7,
     required this.accelX,
     required this.accelY,
@@ -57,6 +62,9 @@ class CollarPacket {
     required this.crcValid,
     required this.receivedAt,
   }) : _byte7 = byte7;
+
+  // Backward compatibility
+  int get pressure => pressures.isNotEmpty ? pressures.first : 0;
 
   // Mode detection
   bool get isStandardMode => packetType == 0xF1;
@@ -80,7 +88,10 @@ class CollarPacket {
   double get batteryVoltage => batteryMv / 1000.0;
 
   // Validation
-  bool get isPressureValid => pressure >= 1000 && pressure <= 60000;
+  bool get isPressureValid =>
+      pressures.isNotEmpty &&
+      pressures.first >= 1000 &&
+      pressures.first <= 60000;
   bool get isBatteryValid => batteryMv >= 3000 && batteryMv <= 4500;
   bool get isTemperatureValid =>
       temperatureRaw >= -1000 && temperatureRaw <= 5000;
@@ -123,10 +134,30 @@ class CollarPacket {
       throw InvalidPacketTypeException(packetType);
     }
 
+    // Parse first pressure
+    final firstPressure = buf.getInt16(5, Endian.little);
+    final List<int> pressures = [firstPressure];
+
+    // 🔥 Check for aggregated samples
+    // Standard packet is 27 bytes. If larger, extra bytes are aggregated samples.
+    // Each sample is 2 bytes (Int16)
+    if (bytes.length > 27) {
+      int offset = 27; // Start after standard packet (including CRC)
+      // Note: In some protocols, CRC is at the end. Here CRC is at 25.
+      // If data is appended *after* CRC (which seems to be the case based on typical BLE structure usage here),
+      // or if the packet structure absorbs them.
+      // Let's assume they are appended at the end of the standard 27 bytes.
+
+      while (offset + 2 <= bytes.length) {
+        pressures.add(buf.getInt16(offset, Endian.little));
+        offset += 2;
+      }
+    }
+
     return CollarPacket._(
       packetType: packetType,
-      timestampMs: buf.getUint32(1, Endian.little),
-      pressure: buf.getInt16(5, Endian.little),
+      timestampUs: buf.getUint32(1, Endian.little),
+      pressures: pressures,
       byte7: bytes[7],
       accelX: buf.getInt16(8, Endian.little),
       accelY: buf.getInt16(10, Endian.little),
@@ -146,7 +177,7 @@ class CollarPacket {
   /// Create test packet for unit testing
   factory CollarPacket.mock({
     int packetType = 0xF1,
-    int timestampMs = 10000,
+    int timestampUs = 10000000, // 10 seconds in microseconds
     int pressure = 26000,
     int quality = 100,
     int accelX = 0,
@@ -158,7 +189,7 @@ class CollarPacket {
   }) {
     final bytes = ByteData(27);
     bytes.setUint8(0, packetType);
-    bytes.setUint32(1, timestampMs, Endian.little);
+    bytes.setUint32(1, timestampUs, Endian.little);
     bytes.setInt16(5, pressure, Endian.little);
     bytes.setUint8(7, quality);
     bytes.setInt16(8, accelX, Endian.little);
@@ -185,8 +216,8 @@ class CollarPacket {
         : isHighResMode
         ? 'HR'
         : 'BAT';
-    return 'CollarPacket($mode, ts=$timestampMs, P=$pressure, T=${temperatureCelsius.toStringAsFixed(1)}°C, '
-        'Batt=${batteryPercent}%, CRC=${crcValid ? '✓' : '✗'})';
+    return 'CollarPacket($mode, ts=$timestampUs us, Samples=${pressures.length}, P=$pressure, T=${temperatureCelsius.toStringAsFixed(1)}°C, '
+        'Batt=$batteryPercent%, CRC=${crcValid ? '✓' : '✗'})';
   }
 
   /// Convert to JSON for logging/debugging
@@ -197,8 +228,10 @@ class CollarPacket {
         : isHighResMode
         ? 'HIGH-RES'
         : 'BATTERY',
-    'timestamp_ms': timestampMs,
-    'pressure': pressure,
+    'timestamp_us': timestampUs,
+    'timestamp_ms': timestampUs ~/ 1000, // For backward compatibility
+    'pressures': pressures,
+    'pressure_first': pressure,
     'quality': quality,
     'status_flags': '0x${statusFlags.toRadixString(16).padLeft(2, '0')}',
     'accel': {'x': accelX, 'y': accelY, 'z': accelZ},

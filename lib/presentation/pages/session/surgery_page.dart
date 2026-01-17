@@ -638,61 +638,101 @@ class _VitalDisplay extends StatelessWidget {
     this.isDecimal = false,
   });
 
+  /// Check if value is valid (not placeholder/invalid)
+  bool get _isValidValue {
+    if (isDecimal) {
+      // For temperature
+      return value > 0 && value < 50; // Valid temperature range
+    } else {
+      // For heart rate and respiratory rate
+      return value >= 30; // Minimum plausible vital sign
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isInRange = range?.isInRange(value.toDouble()) ?? true;
     final displayColor = isInRange ? color : AppColors.warning;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: displayColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: displayColor.withOpacity(0.3)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // Label with icon
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 14, color: displayColor),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: AppTypography.labelSmall.copyWith(color: displayColor),
+              Flexible(
+                child: Text(
+                  label,
+                  style: AppTypography.labelSmall.copyWith(color: displayColor),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 4),
+          // Value and unit
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(
-                isDecimal ? value.toStringAsFixed(1) : value.toString(),
-                style: AppTypography.vitalValueLarge.copyWith(
-                  color: displayColor,
+              Flexible(
+                child: Text(
+                  _isValidValue
+                      ? (isDecimal ? value.toStringAsFixed(1) : value.toString())
+                      : '--',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: displayColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
               const SizedBox(width: 2),
-              Text(
-                unit,
-                style: AppTypography.vitalUnit.copyWith(color: displayColor),
+              Flexible(
+                child: Text(
+                  unit,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: displayColor,
+                    fontSize: 12,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
             ],
           ),
-          if (!isInRange)
+          // Show warning badge if out of range OR invalid
+          if (!isInRange || !_isValidValue)
             Container(
               margin: const EdgeInsets.only(top: 4),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.warning,
+                color: _isValidValue ? AppColors.warning : AppColors.error.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 'OUT OF RANGE',
                 style: AppTypography.badge.copyWith(fontSize: 8),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ),
         ],

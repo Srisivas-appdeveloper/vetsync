@@ -12,8 +12,8 @@ class AuthController extends GetxController {
   final StorageService _storage = Get.find<StorageService>();
 
   // Form controllers
-  final observerIdController = TextEditingController();
-  final passwordController = TextEditingController();
+  late final TextEditingController observerIdController;
+  late final TextEditingController passwordController;
 
   // Form state
   final formKey = GlobalKey<FormState>();
@@ -28,7 +28,13 @@ class AuthController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _loadLastObserverId();
+    // Initialize controllers in onInit to avoid hot reload issues
+    observerIdController = TextEditingController();
+    passwordController = TextEditingController();
+    // Set development defaults immediately (synchronous)
+    _setDevelopmentDefaults();
+    // Don't load last observer ID in development mode to avoid overwriting
+    // _loadLastObserverId();
   }
 
   @override
@@ -44,6 +50,15 @@ class AuthController extends GetxController {
     if (lastId != null) {
       observerIdController.text = lastId;
     }
+  }
+
+  /// Set development defaults for easier testing
+  /// TODO: Remove or disable this in production
+  void _setDevelopmentDefaults() {
+    // Auto-fill credentials for development/testing
+    // Set these immediately to avoid race conditions with async loading
+    observerIdController.text = 'mbalasankar576@gmail.com';
+    passwordController.text = '123456';
   }
 
   /// Toggle password visibility

@@ -35,11 +35,11 @@ class SurgeryController extends GetxController {
   // Annotation dialog state
   final Rx<AnnotationCategory?> selectedCategory = Rx<AnnotationCategory?>(null);
   final RxString selectedType = ''.obs;
-  final TextEditingController notesController = TextEditingController();
-  
+  late final TextEditingController notesController;
+
   // Physiological event tracking
   final RxList<PhysiologicalEventType> recentPhysioEvents = <PhysiologicalEventType>[].obs;
-  
+
   // Session shortcuts
   Session? get currentSession => _sessionController.currentSession.value;
   String get sessionDuration => _sessionController.sessionDuration.value;
@@ -48,10 +48,12 @@ class SurgeryController extends GetxController {
   int get signalQuality => _sessionController.signalQuality.value;
   int get batteryPercent => _sessionController.batteryPercent.value;
   List<Annotation> get annotations => _sessionController.sessionAnnotations;
-  
+
   @override
   void onInit() {
     super.onInit();
+    // Initialize controller in onInit to avoid hot reload issues
+    notesController = TextEditingController();
     _loadRecentCategories();
   }
   

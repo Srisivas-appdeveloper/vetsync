@@ -329,9 +329,9 @@ enum CollarStatus {
 /// Signal strength levels
 enum SignalStrength {
   excellent('Excellent', -60),
-  good('Good', -70),
-  fair('Fair', -80),
-  poor('Poor', -100);
+  good('Good', -75),
+  fair('Fair', -90),
+  weak('Weak', -100);
 
   final String displayName;
   final int minRssi;
@@ -340,9 +340,9 @@ enum SignalStrength {
 
   static SignalStrength fromRssi(int rssi) {
     if (rssi >= -60) return SignalStrength.excellent;
-    if (rssi >= -70) return SignalStrength.good;
-    if (rssi >= -80) return SignalStrength.fair;
-    return SignalStrength.poor;
+    if (rssi >= -75) return SignalStrength.good;
+    if (rssi >= -90) return SignalStrength.fair;
+    return SignalStrength.weak;
   }
 }
 

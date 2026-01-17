@@ -6,6 +6,7 @@ import '../../../widgets/vital_signs_display.dart';
 import '../../../app/themes/app_colors.dart';
 import '../../../app/themes/app_typography.dart';
 import '../../../app/themes/app_theme.dart';
+import '../../../widgets/bcg_waveform_widget.dart';
 
 class MonitoringPage extends GetView<MonitoringController> {
   const MonitoringPage({super.key});
@@ -37,47 +38,84 @@ class MonitoringPage extends GetView<MonitoringController> {
           }),
         ],
       ),
-      body: Padding(
-        padding: AppSpacing.screenPadding,
-        child: Column(
-          children: [
-            // Mode Switcher
-            _buildModeSwitcher(),
-            const SizedBox(height: 24),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: AppSpacing.screenPadding,
+          child: Column(
+            children: [
+              // Mode Switcher
+              _buildModeSwitcher(),
+              const SizedBox(height: 24),
 
-            // Live Vitals Display
-            Expanded(
-              child: GetBuilder<MonitoringController>(
-                // Use GetBuilder for simple updates or Obx
-                id: 'vitals', // Update ID if needed
-                builder: (ctrl) {
-                  // We need to listen to the service updates.
-                  // Since VitalSignsDisplay takes non-observable values, we wrap it in Obx
-                  return Obx(() {
-                    // Trigger rebuild when latestResult changes (indirectly via GetxService listener in BleService?
-                    // BleService updates its streams.
-                    // But controller properties access getters.
-                    // We need to make sure UI rebuilds when BCG service updates.
+              // Live Vitals Display - Use fixed height instead of Expanded for scrollability
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Allocate space for vitals based on screen size
+                  final screenHeight = MediaQuery.of(context).size.height;
+                  final vitalsHeight = (screenHeight * 0.5).clamp(300.0, 500.0);
 
-                    // Actually, controller.lastBcgResult is a getter, not observable.
-                    // But BleService.bcgService is ChangeNotifier.
+                  return SizedBox(
+                    height: vitalsHeight,
+                    child: GetBuilder<MonitoringController>(
+                      // Use GetBuilder for simple updates or Obx
+                      id: 'vitals', // Update ID if needed
+                      builder: (ctrl) {
+                        // We need to listen to the service updates.
+                        // Since VitalSignsDisplay takes non-observable values, we wrap it in Obx
+                        return Obx(() {
+                          // Trigger rebuild when latestResult changes (indirectly via GetxService listener in BleService?
+                          // BleService updates its streams.
+                          // But controller properties access getters.
+                          // We need to make sure UI rebuilds when BCG service updates.
 
-                    return ListenableBuilder(
-                      listenable: controller.bcgService,
-                      builder: (context, _) {
-                        return VitalSignsDisplay(
-                          bcgResult: controller.lastBcgResult,
-                          temperatureCelsius: controller.temperature,
-                          signalQuality: controller.signalQuality,
-                          onRefresh: controller.resetService,
-                        );
+                          // Actually, controller.lastBcgResult is a getter, not observable.
+                          // But BleService.bcgService is ChangeNotifier.
+
+                          return ListenableBuilder(
+                            listenable: controller.bcgService,
+                            builder: (context, _) {
+                              return VitalSignsDisplay(
+                                bcgResult: controller.lastBcgResult,
+                                temperatureCelsius: controller.temperature,
+                                signalQuality: controller.signalQuality,
+                                onRefresh: controller.resetService,
+                              );
+                            },
+                          );
+                        });
                       },
-                    );
-                  });
+                    ),
+                  );
                 },
               ),
-            ),
-          ],
+
+              const SizedBox(height: 16),
+
+              // BCG Waveform Display
+              Text("Real-time Pulse Waveform", style: AppTypography.titleSmall),
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Use 20% of screen height or minimum 150px for waveform
+                  final screenHeight = MediaQuery.of(context).size.height;
+                  final waveformHeight = (screenHeight * 0.20).clamp(150.0, 250.0);
+
+                  return Container(
+                    height: waveformHeight,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: BCGWaveformWidget(controller: controller),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 80), // Space for FAB
+            ],
+          ),
         ),
       ),
       floatingActionButton: Obx(

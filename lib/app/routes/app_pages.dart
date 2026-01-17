@@ -65,6 +65,7 @@ class AppPages {
     GetPage(
       name: Routes.addPet,
       page: () => const AddPetPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
@@ -76,51 +77,61 @@ class AppPages {
     GetPage(
       name: Routes.sessionSetup,
       page: () => const SessionSetupPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.baselineCollection,
       page: () => const BaselineCollectionPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.baselineComplete,
       page: () => const BaselineCompletePage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.preSurgery,
       page: () => const PreSurgeryPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.startSurgery,
       page: () => const StartSurgeryPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.surgery,
       page: () => const SurgeryPage(),
+      binding: SessionBinding(),
       transition: Transition.fadeIn,
     ),
     GetPage(
       name: Routes.calibration,
       page: () => const CalibrationPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.recovery,
       page: () => const RecoveryPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.endSession,
       page: () => const EndSessionPage(),
+      binding: SessionBinding(),
       transition: Transition.rightToLeft,
     ),
     GetPage(
       name: Routes.sessionComplete,
       page: () => const SessionCompletePage(),
+      binding: SessionBinding(),
       transition: Transition.fadeIn,
     ),
 

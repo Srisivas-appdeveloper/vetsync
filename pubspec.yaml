@@ -39,7 +39,7 @@ dependencies:
   get: ^4.6.6
 
 # Bluetooth
-  flutter_blue_plus: ^1.31.0
+  flutter_blue_plus: ^1.36.5  # Updated for better stability and MTU handling
   permission_handler: ^11.1.0
 
 # Networking

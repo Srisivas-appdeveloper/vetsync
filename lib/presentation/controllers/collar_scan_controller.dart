@@ -32,6 +32,14 @@ class CollarScanController extends GetxController {
   // Last used collar ID
   String? _lastCollarId;
 
+  // Auto-stop scan when collar found (configurable)
+  final RxBool autoStopOnFound = true.obs;
+  Worker? _collarDiscoveryWorker;
+
+  // Location services monitoring
+  Timer? _locationCheckTimer;
+  final RxBool isLocationServiceEnabled = true.obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -42,12 +50,54 @@ class CollarScanController extends GetxController {
     ever(_bleService.connectionState, (state) {
       connectionState.value = state;
     });
+
+    // Start monitoring location services
+    _startLocationServiceMonitoring();
   }
 
   @override
   void onClose() {
     stopScan();
+    _collarDiscoveryWorker?.dispose();
+    _locationCheckTimer?.cancel();
     super.onClose();
+  }
+
+  /// Monitor location services status periodically
+  void _startLocationServiceMonitoring() {
+    _checkLocationServiceStatus();
+
+    // Check every 3 seconds
+    _locationCheckTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _checkLocationServiceStatus(),
+    );
+  }
+
+  /// Check current location service status
+  Future<void> _checkLocationServiceStatus() async {
+    if (!hasPermission.value) return;
+
+    final locationServiceStatus = await Permission.location.serviceStatus;
+    final wasEnabled = isLocationServiceEnabled.value;
+    isLocationServiceEnabled.value = locationServiceStatus.isEnabled;
+
+    // If location was disabled and now enabled, auto-start scan
+    if (!wasEnabled && isLocationServiceEnabled.value) {
+      print('[SCAN] ✅ Location services enabled - starting scan');
+      Get.snackbar(
+        'Location Enabled',
+        'Location services are now ON. Starting scan...',
+        duration: const Duration(seconds: 2),
+        backgroundColor: Get.theme.colorScheme.primaryContainer,
+      );
+      startScan();
+    }
+
+    // If location is disabled and we have permissions, show persistent warning
+    if (!isLocationServiceEnabled.value && hasPermission.value) {
+      _showLocationRequiredDialog();
+    }
   }
 
   /// Load last used collar ID
@@ -67,7 +117,21 @@ class CollarScanController extends GetxController {
         location.isGranted;
 
     if (hasPermission.value) {
-      startScan();
+      // Check if location services are enabled
+      final locationServiceStatus = await Permission.location.serviceStatus;
+      if (!locationServiceStatus.isEnabled) {
+        Get.snackbar(
+          'Location Services Required',
+          'Please turn ON location services in your device settings to scan for Bluetooth devices',
+          duration: const Duration(seconds: 8),
+          mainButton: TextButton(
+            onPressed: () => openAppSettings(),
+            child: const Text('Open Settings'),
+          ),
+        );
+      } else {
+        startScan();
+      }
     }
   }
 
@@ -88,6 +152,63 @@ class CollarScanController extends GetxController {
     }
   }
 
+  /// Show dialog prompting user to enable location services
+  bool _isShowingLocationDialog = false;
+
+  void _showLocationRequiredDialog() {
+    // Prevent multiple dialogs from stacking
+    if (_isShowingLocationDialog) return;
+    if (Get.isDialogOpen == true) return;
+
+    _isShowingLocationDialog = true;
+
+    Get.dialog(
+      PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) {
+            _isShowingLocationDialog = false;
+          }
+        },
+        child: AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.location_off, color: Get.theme.colorScheme.error),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('Location Services OFF')),
+            ],
+          ),
+          content: const Text(
+            'Location services must be turned ON to scan for Bluetooth devices.\n\n'
+            'This is an Android requirement for Bluetooth scanning.\n\n'
+            'Please go to Settings → Location and turn it ON.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _isShowingLocationDialog = false;
+                Get.back();
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                _isShowingLocationDialog = false;
+                Get.back();
+                openAppSettings();
+              },
+              icon: const Icon(Icons.settings),
+              label: const Text('Open Settings'),
+            ),
+          ],
+        ),
+      ),
+      barrierDismissible: false,
+    ).then((_) {
+      _isShowingLocationDialog = false;
+    });
+  }
+
   /// Start BLE scan
   Future<void> startScan() async {
     if (!hasPermission.value) {
@@ -102,11 +223,12 @@ class CollarScanController extends GetxController {
     connectionError.value = '';
 
     try {
-      // Start scan - BleService handles device discovery internally
-      await _bleService.startScan();
+      // Cancel previous worker if exists
+      _collarDiscoveryWorker?.dispose();
 
-      // Listen to discovered collars from BleService
-      ever(_bleService.discoveredCollars, (List<DiscoveredCollar> collars) {
+      // Listen to discovered collars from BLE Service
+      _collarDiscoveryWorker = ever(_bleService.discoveredCollars, (List<DiscoveredCollar> collars) {
+        print('[SCAN] 🔄 Worker triggered: ${collars.length} collar(s) received from BLE service');
         discoveredCollars.value = collars;
 
         // Highlight last used collar by moving to top
@@ -119,9 +241,63 @@ class CollarScanController extends GetxController {
             discoveredCollars.insert(0, lastUsed);
           }
         }
+
+        // Auto-stop scan when first collar is found (if enabled)
+        if (autoStopOnFound.value && collars.isNotEmpty && isScanning.value) {
+          print('[SCAN] 🎯 Auto-stopping scan - found ${collars.length} collar(s)');
+          // Delay stop slightly to allow more collars to be discovered
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (isScanning.value) {
+              stopScan();
+              Get.snackbar(
+                'Collar Found',
+                'Found ${discoveredCollars.length} collar(s). Tap to connect.',
+                duration: const Duration(seconds: 2),
+                snackPosition: SnackPosition.BOTTOM,
+              );
+            }
+          });
+        }
       });
+
+      // CRITICAL FIX: Sync initial state immediately
+      // Worker only fires on FUTURE changes, not current state
+      // If BLE service already found collars before Worker setup, we'd miss them
+      if (_bleService.discoveredCollars.isNotEmpty) {
+        print('[SCAN] 📋 Syncing initial state: ${_bleService.discoveredCollars.length} collar(s) already discovered');
+        discoveredCollars.value = List.from(_bleService.discoveredCollars);
+
+        // Apply last used collar sorting
+        if (_lastCollarId != null) {
+          final lastUsedIndex = discoveredCollars.indexWhere(
+            (c) => c.collarId == _lastCollarId,
+          );
+          if (lastUsedIndex > 0) {
+            final lastUsed = discoveredCollars.removeAt(lastUsedIndex);
+            discoveredCollars.insert(0, lastUsed);
+          }
+        }
+      }
+
+      // Start scan - BLE Service handles device discovery internally
+      await _bleService.startScan();
     } catch (e) {
       connectionError.value = 'Scan failed: ${e.toString()}';
+
+      // Show specific message for location services issue
+      if (e.toString().contains('Location services')) {
+        Get.snackbar(
+          'Location Services Required',
+          'Please turn ON location services in your device settings',
+          duration: const Duration(seconds: 8),
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
+          mainButton: TextButton(
+            onPressed: () => openAppSettings(),
+            child: const Text('Open Settings'),
+          ),
+        );
+      }
     }
   }
 
@@ -129,6 +305,13 @@ class CollarScanController extends GetxController {
   void stopScan() {
     _bleService.stopScan();
     isScanning.value = false;
+    print('[SCAN] 🛑 Scan stopped. Found ${discoveredCollars.length} collar(s)');
+  }
+
+  /// Toggle auto-stop on collar discovery
+  void toggleAutoStop() {
+    autoStopOnFound.value = !autoStopOnFound.value;
+    print('[SCAN] Auto-stop ${autoStopOnFound.value ? "enabled" : "disabled"}');
   }
 
   /// Connect to a collar
@@ -159,7 +342,7 @@ class CollarScanController extends GetxController {
           id: collar.collarId,
           serialNumber: collar.collarId,
           firmwareVersion: collar.firmwareVersion,
-          batteryPercent: collar.batteryPercent ?? 100,
+          batteryPercent: collar.batteryPercent ?? 0, // 0 indicates unknown until connected
           status: CollarStatus.available,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
@@ -179,8 +362,9 @@ class CollarScanController extends GetxController {
         return;
       }
 
-      // Check battery
-      if ((collar.batteryPercent ?? 100) < AppConfig.batteryCritical) {
+      // Check battery (only if battery data is available)
+      if (collar.batteryPercent != null &&
+          collar.batteryPercent! < AppConfig.batteryCritical) {
         final proceed = await Get.dialog<bool>(
           AlertDialog(
             title: const Text('Low Battery'),

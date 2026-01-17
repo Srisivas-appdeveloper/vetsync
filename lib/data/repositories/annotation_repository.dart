@@ -86,7 +86,24 @@ class AnnotationRepository {
           data: annotation.toJson(),
         );
         await _database.db.updateAnnotationSyncStatus(annotationId, 'synced');
-        return Annotation.fromJson(response.data as Map<String, dynamic>);
+
+        // Handle response data structure - may have 'data' wrapper or error
+        final responseData = response.data;
+        if (responseData is Map<String, dynamic>) {
+          // Check if response has 'data' field (API wrapper)
+          if (responseData.containsKey('data') && responseData['data'] != null) {
+            return Annotation.fromJson(responseData['data'] as Map<String, dynamic>);
+          } else if (responseData.containsKey('success') &&
+                     responseData['success'] == false) {
+            // Server returned error response, log and return original
+            print('Annotation sync error: ${responseData['error']}');
+            return annotation;
+          } else {
+            return Annotation.fromJson(responseData);
+          }
+        }
+        // If response structure unexpected, return original annotation
+        return annotation;
       } catch (e) {
         print('Annotation sync failed, will retry: $e');
       }

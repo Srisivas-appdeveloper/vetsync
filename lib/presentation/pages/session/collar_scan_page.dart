@@ -19,41 +19,63 @@ class CollarScanPage extends GetView<CollarScanController> {
       appBar: AppBar(
         title: const Text('Connect Collar'),
         actions: [
-          Obx(() => IconButton(
-            icon: Icon(
-              controller.isScanning.value ? Icons.stop : Icons.refresh,
+          // Auto-stop toggle
+          Obx(
+            () => Tooltip(
+              message: controller.autoStopOnFound.value
+                  ? 'Auto-stop enabled\nTap to scan continuously'
+                  : 'Auto-stop disabled\nTap to stop on first collar',
+              child: IconButton(
+                icon: Icon(
+                  controller.autoStopOnFound.value
+                      ? Icons.play_circle_outline
+                      : Icons.all_inclusive,
+                  color: controller.autoStopOnFound.value
+                      ? AppColors.success
+                      : AppColors.textSecondary,
+                ),
+                onPressed: controller.toggleAutoStop,
+              ),
             ),
-            onPressed: controller.isScanning.value 
-                ? controller.stopScan 
-                : controller.startScan,
-            tooltip: controller.isScanning.value ? 'Stop Scan' : 'Scan Again',
-          )),
+          ),
+          // Scan/Stop button
+          Obx(
+            () => IconButton(
+              icon: Icon(
+                controller.isScanning.value ? Icons.stop : Icons.refresh,
+              ),
+              onPressed: controller.isScanning.value
+                  ? controller.stopScan
+                  : controller.startScan,
+              tooltip: controller.isScanning.value ? 'Stop Scan' : 'Scan Again',
+            ),
+          ),
         ],
       ),
       body: Obx(() => _buildContent()),
     );
   }
-  
+
   Widget _buildContent() {
     // Permission check
     if (!controller.hasPermission.value) {
       return _buildPermissionRequest();
     }
-    
+
     // Connecting
     if (controller.isConnecting.value) {
       return _buildConnecting();
     }
-    
+
     // Scan results
     return Column(
       children: [
         // Scan status bar
         _buildScanStatus(),
-        
+
         // Error message
         if (controller.connectionError.isNotEmpty) _buildError(),
-        
+
         // Collar list
         Expanded(
           child: controller.discoveredCollars.isEmpty
@@ -63,7 +85,7 @@ class CollarScanPage extends GetView<CollarScanController> {
       ],
     );
   }
-  
+
   Widget _buildPermissionRequest() {
     return Center(
       child: Padding(
@@ -84,7 +106,8 @@ class CollarScanPage extends GetView<CollarScanController> {
             ),
             const SizedBox(height: 12),
             Text(
-              'VetSync needs Bluetooth and location permissions to discover and connect to collars.',
+              'VetSync needs Bluetooth and location permissions to discover and connect to collars.\n\n'
+              'Note: Location services must also be turned ON in your device settings (Android requirement for Bluetooth scanning).',
               style: AppTypography.bodyMedium.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -101,7 +124,7 @@ class CollarScanPage extends GetView<CollarScanController> {
       ),
     );
   }
-  
+
   Widget _buildConnecting() {
     return Center(
       child: Column(
@@ -109,10 +132,7 @@ class CollarScanPage extends GetView<CollarScanController> {
         children: [
           const CircularProgressIndicator(),
           const SizedBox(height: 24),
-          Text(
-            'Connecting...',
-            style: AppTypography.titleMedium,
-          ),
+          Text('Connecting...', style: AppTypography.titleMedium),
           if (controller.selectedCollar.value != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -126,12 +146,12 @@ class CollarScanPage extends GetView<CollarScanController> {
       ),
     );
   }
-  
+
   Widget _buildScanStatus() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: controller.isScanning.value 
-          ? AppColors.primarySurface 
+      color: controller.isScanning.value
+          ? AppColors.primarySurface
           : AppColors.surface,
       child: Row(
         children: [
@@ -142,13 +162,23 @@ class CollarScanPage extends GetView<CollarScanController> {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 12),
-            const Text('Scanning for collars...'),
-          ] else ...[
-            Icon(
-              Icons.bluetooth,
-              color: AppColors.textSecondary,
-              size: 16,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Scanning for collars...'),
+                  if (controller.autoStopOnFound.value)
+                    Text(
+                      'Will auto-stop when collar found',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.success,
+                      ),
+                    ),
+                ],
+              ),
             ),
+          ] else ...[
+            Icon(Icons.bluetooth, color: AppColors.textSecondary, size: 16),
             const SizedBox(width: 8),
             Text(
               '${controller.discoveredCollars.length} collar(s) found',
@@ -165,7 +195,7 @@ class CollarScanPage extends GetView<CollarScanController> {
       ),
     );
   }
-  
+
   Widget _buildError() {
     return Container(
       margin: const EdgeInsets.all(16),
@@ -188,13 +218,11 @@ class CollarScanPage extends GetView<CollarScanController> {
       ),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return EmptyState(
       icon: Icons.bluetooth_searching,
-      title: controller.isScanning.value 
-          ? 'Searching...' 
-          : 'No collars found',
+      title: controller.isScanning.value ? 'Searching...' : 'No collars found',
       subtitle: 'Make sure the collar is turned on and within range',
       action: !controller.isScanning.value
           ? ElevatedButton.icon(
@@ -205,7 +233,7 @@ class CollarScanPage extends GetView<CollarScanController> {
           : null,
     );
   }
-  
+
   Widget _buildCollarList() {
     return ListView.builder(
       padding: AppSpacing.screenPadding,
@@ -231,7 +259,7 @@ class _CollarCard extends StatelessWidget {
   final bool isLastUsed;
   final String? batteryWarning;
   final VoidCallback onTap;
-  
+
   const _CollarCard({
     required this.collar,
     required this.status,
@@ -239,7 +267,7 @@ class _CollarCard extends StatelessWidget {
     this.batteryWarning,
     required this.onTap,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -259,18 +287,20 @@ class _CollarCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isLastUsed 
-                          ? AppColors.primary.withOpacity(0.1) 
+                      color: isLastUsed
+                          ? AppColors.primary.withOpacity(0.1)
                           : AppColors.surfaceVariant,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       Icons.pets,
-                      color: isLastUsed ? AppColors.primary : AppColors.textSecondary,
+                      color: isLastUsed
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 16),
-                  
+
                   // Collar info
                   Expanded(
                     child: Column(
@@ -286,7 +316,7 @@ class _CollarCard extends StatelessWidget {
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, 
+                                  horizontal: 8,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
@@ -313,7 +343,7 @@ class _CollarCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  
+
                   // Connect button
                   const Icon(
                     Icons.chevron_right,
@@ -321,12 +351,15 @@ class _CollarCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               // Battery warning
               if (batteryWarning != null) ...[
                 const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.warningSurface,
                     borderRadius: BorderRadius.circular(8),
@@ -356,7 +389,7 @@ class _CollarCard extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildSignalIndicator() {
     final color = _getSignalColor();
     return Row(
@@ -371,7 +404,7 @@ class _CollarCard extends StatelessWidget {
       ],
     );
   }
-  
+
   Widget _buildBatteryIndicator() {
     final battery = collar.batteryPercent!;
     final color = AppColors.getBatteryColor(battery);
@@ -391,7 +424,7 @@ class _CollarCard extends StatelessWidget {
       ],
     );
   }
-  
+
   Color _getSignalColor() {
     switch (collar.signalStrength) {
       case SignalStrength.excellent:
@@ -400,7 +433,7 @@ class _CollarCard extends StatelessWidget {
         return AppColors.primary;
       case SignalStrength.fair:
         return AppColors.warning;
-      case SignalStrength.poor:
+      case SignalStrength.weak:
         return AppColors.error;
     }
   }
