@@ -36,6 +36,7 @@ class LocalSessions extends Table {
   TextColumn get collarPhotoPath => text().nullable()();
   TextColumn get initialPosition => text().nullable()();
   TextColumn get initialAnxiety => text().nullable()();
+  BoolColumn get verySick => boolean().withDefault(const Constant(false))();
   TextColumn get initialNotes => text().nullable()();
   TextColumn get syncStatus => text().withDefault(const Constant('pending'))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
@@ -128,7 +129,17 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      if (from == 1) {
+        // Migration from v1 to v2: Add verySick column
+        await migrator.addColumn(localSessions, localSessions.verySick);
+      }
+    },
+  );
   
   // ============================================================
   // Session Operations

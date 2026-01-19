@@ -105,16 +105,79 @@ class PetSelectionController extends GetxController {
 
   /// Select an animal
   void selectAnimal(Animal animal) {
-    selectedAnimal.value = animal;
-    _sessionController.currentAnimal.value = animal;
+    print('[PetSelection] ========================================');
+    print('[PetSelection] 🐾 SELECT ANIMAL BUTTON PRESSED');
+    print('[PetSelection] ========================================');
+    print('[PetSelection] Animal ID: ${animal.id}');
+    print('[PetSelection] Animal Name: ${animal.name}');
+    print('[PetSelection] Target Route: ${Routes.collarScan}');
 
-    // Navigate to collar scan
-    Get.toNamed(Routes.collarScan);
+    try {
+      selectedAnimal.value = animal;
+      _sessionController.currentAnimal.value = animal;
+
+      print('[PetSelection] ✅ Animal set in session controller');
+
+      // Navigate to collar scan
+      print('[PetSelection] 🚀 Attempting navigation to collar scan...');
+      Get.toNamed(Routes.collarScan);
+      print('[PetSelection] ✅ Navigation successful');
+      print('[PetSelection] ========================================');
+    } catch (e, stackTrace) {
+      print('[PetSelection] ========================================');
+      print('[PetSelection] ❌ NAVIGATION ERROR');
+      print('[PetSelection] ========================================');
+      print('[PetSelection] Error Type: ${e.runtimeType}');
+      print('[PetSelection] Error Message: $e');
+      print('[PetSelection] Attempted Route: ${Routes.collarScan}');
+      print('[PetSelection] Selected Animal: ${animal.name} (${animal.id})');
+      print('[PetSelection] Stack Trace:');
+      print(stackTrace);
+      print('[PetSelection] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to navigate to collar scan. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   /// Navigate to add new pet
   void addNewPet() {
-    Get.toNamed(Routes.addPet);
+    print('[PetSelection] ========================================');
+    print('[PetSelection] ➕ ADD NEW PET BUTTON PRESSED');
+    print('[PetSelection] ========================================');
+    print('[PetSelection] Target Route: ${Routes.addPet}');
+
+    try {
+      print('[PetSelection] 🚀 Attempting navigation to add pet...');
+      Get.toNamed(Routes.addPet);
+      print('[PetSelection] ✅ Navigation successful');
+      print('[PetSelection] ========================================');
+    } catch (e, stackTrace) {
+      print('[PetSelection] ========================================');
+      print('[PetSelection] ❌ NAVIGATION ERROR');
+      print('[PetSelection] ========================================');
+      print('[PetSelection] Error Type: ${e.runtimeType}');
+      print('[PetSelection] Error Message: $e');
+      print('[PetSelection] Attempted Route: ${Routes.addPet}');
+      print('[PetSelection] Stack Trace:');
+      print(stackTrace);
+      print('[PetSelection] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to navigate to add pet screen. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   /// Check if animal is displayed (in search results or recent)
@@ -218,7 +281,35 @@ class AddPetController extends GetxController {
       final sessionController = Get.find<SessionController>();
       sessionController.currentAnimal.value = animal;
 
-      Get.offNamed(Routes.collarScan);
+      print('[AddPet] ========================================');
+      print('[AddPet] ✅ Pet created successfully: ${animal.name}');
+      print('[AddPet] 🚀 Attempting navigation to collar scan...');
+      print('[AddPet] Target Route: ${Routes.collarScan}');
+      try {
+        Get.offNamed(Routes.collarScan);
+        print('[AddPet] ✅ Navigation successful');
+        print('[AddPet] ========================================');
+      } catch (navError, navStackTrace) {
+        print('[AddPet] ========================================');
+        print('[AddPet] ❌ NAVIGATION ERROR');
+        print('[AddPet] ========================================');
+        print('[AddPet] Error Type: ${navError.runtimeType}');
+        print('[AddPet] Error Message: $navError');
+        print('[AddPet] Attempted Route: ${Routes.collarScan}');
+        print('[AddPet] Created Pet: ${animal.name} (${animal.id})');
+        print('[AddPet] Stack Trace:');
+        print(navStackTrace);
+        print('[AddPet] ========================================');
+
+        Get.snackbar(
+          'Navigation Error',
+          'Pet created but failed to navigate. Please go back and select the pet.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
+          duration: const Duration(seconds: 5),
+        );
+      }
     } catch (e) {
       Get.snackbar('Error', 'Failed to create pet');
     } finally {

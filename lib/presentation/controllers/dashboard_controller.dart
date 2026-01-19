@@ -100,34 +100,129 @@ class DashboardController extends GetxController {
 
   /// Start new session
   void startNewSession() {
-    Get.toNamed(Routes.petSelection);
+    print('[Dashboard] ========================================');
+    print('[Dashboard] 🆕 START NEW SESSION BUTTON PRESSED');
+    print('[Dashboard] ========================================');
+    print('[Dashboard] Target Route: ${Routes.petSelection}');
+
+    try {
+      print('[Dashboard] 🚀 Attempting navigation to pet selection...');
+      Get.toNamed(Routes.petSelection);
+      print('[Dashboard] ✅ Navigation successful');
+      print('[Dashboard] ========================================');
+    } catch (e, stackTrace) {
+      print('[Dashboard] ========================================');
+      print('[Dashboard] ❌ NAVIGATION ERROR');
+      print('[Dashboard] ========================================');
+      print('[Dashboard] Error Type: ${e.runtimeType}');
+      print('[Dashboard] Error Message: $e');
+      print('[Dashboard] Attempted Route: ${Routes.petSelection}');
+      print('[Dashboard] Stack Trace:');
+      print(stackTrace);
+      print('[Dashboard] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to start new session. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   /// Resume active session
   void resumeSession(Session session) {
-    // Navigate to appropriate screen based on session phase
-    switch (session.currentPhase) {
-      case SessionPhase.preSurgery:
-        Get.toNamed(Routes.preSurgery, arguments: session);
-        break;
-      case SessionPhase.surgery:
-        Get.toNamed(Routes.surgery, arguments: session);
-        break;
-      case SessionPhase.calibration:
-        Get.toNamed(Routes.calibration, arguments: session);
-        break;
-      case SessionPhase.recovery:
-        Get.toNamed(Routes.recovery, arguments: session);
-        break;
-      case SessionPhase.completed:
-        Get.toNamed(Routes.sessionComplete, arguments: session);
-        break;
+    print('[Dashboard] ========================================');
+    print('[Dashboard] 🔄 RESUME SESSION BUTTON PRESSED');
+    print('[Dashboard] ========================================');
+    print('[Dashboard] Session ID: ${session.id}');
+    print('[Dashboard] Session Phase: ${session.currentPhase.displayName}');
+    print('[Dashboard] Animal: ${session.animalId}');
+
+    try {
+      // Navigate to appropriate screen based on session phase
+      switch (session.currentPhase) {
+        case SessionPhase.preSurgery:
+          print('[Dashboard] 🚀 Attempting navigation to pre-surgery...');
+          Get.toNamed(Routes.preSurgery, arguments: session);
+          break;
+        case SessionPhase.surgery:
+          print('[Dashboard] 🚀 Attempting navigation to surgery...');
+          Get.toNamed(Routes.surgery, arguments: session);
+          break;
+        case SessionPhase.calibration:
+          print('[Dashboard] 🚀 Attempting navigation to calibration...');
+          Get.toNamed(Routes.calibration, arguments: session);
+          break;
+        case SessionPhase.recovery:
+          print('[Dashboard] 🚀 Attempting navigation to recovery...');
+          Get.toNamed(Routes.recovery, arguments: session);
+          break;
+        case SessionPhase.completed:
+          print('[Dashboard] 🚀 Attempting navigation to session complete...');
+          Get.toNamed(Routes.sessionComplete, arguments: session);
+          break;
+      }
+
+      print('[Dashboard] ✅ Navigation successful');
+      print('[Dashboard] ========================================');
+    } catch (e, stackTrace) {
+      print('[Dashboard] ========================================');
+      print('[Dashboard] ❌ NAVIGATION ERROR');
+      print('[Dashboard] ========================================');
+      print('[Dashboard] Error Type: ${e.runtimeType}');
+      print('[Dashboard] Error Message: $e');
+      print('[Dashboard] Session ID: ${session.id}');
+      print('[Dashboard] Session Phase: ${session.currentPhase.displayName}');
+      print('[Dashboard] Stack Trace:');
+      print(stackTrace);
+      print('[Dashboard] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to resume session. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
     }
   }
 
   /// Open settings
   void openSettings() {
-    Get.toNamed(Routes.settings);
+    print('[Dashboard] ========================================');
+    print('[Dashboard] ⚙️ SETTINGS BUTTON PRESSED');
+    print('[Dashboard] ========================================');
+    print('[Dashboard] Target Route: ${Routes.settings}');
+
+    try {
+      print('[Dashboard] 🚀 Attempting navigation to settings...');
+      Get.toNamed(Routes.settings);
+      print('[Dashboard] ✅ Navigation successful');
+      print('[Dashboard] ========================================');
+    } catch (e, stackTrace) {
+      print('[Dashboard] ========================================');
+      print('[Dashboard] ❌ NAVIGATION ERROR');
+      print('[Dashboard] ========================================');
+      print('[Dashboard] Error Type: ${e.runtimeType}');
+      print('[Dashboard] Error Message: $e');
+      print('[Dashboard] Attempted Route: ${Routes.settings}');
+      print('[Dashboard] Stack Trace:');
+      print(stackTrace);
+      print('[Dashboard] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to open settings. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   /// Manual sync
@@ -147,26 +242,64 @@ class DashboardController extends GetxController {
 
   /// Logout
   Future<void> logout() async {
-    final confirmed = await Get.dialog<bool>(
-      AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(result: false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Get.back(result: true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
+    print('[Dashboard] ========================================');
+    print('[Dashboard] 🚪 LOGOUT BUTTON PRESSED');
+    print('[Dashboard] ========================================');
 
-    if (confirmed == true) {
-      await _authService.logout();
-      Get.offAllNamed(Routes.login);
+    try {
+      final confirmed = await Get.dialog<bool>(
+        AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                print('[Dashboard] 📱 Logout cancelled by user');
+                Get.back(result: false);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                print('[Dashboard] ✅ Logout confirmed by user');
+                Get.back(result: true);
+              },
+              child: const Text('Logout'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true) {
+        print('[Dashboard] 🔄 Performing logout...');
+        await _authService.logout();
+        print('[Dashboard] ✅ Auth service logout successful');
+
+        print('[Dashboard] 🚀 Attempting navigation to login...');
+        Get.offAllNamed(Routes.login);
+        print('[Dashboard] ✅ Navigation to login successful');
+      } else {
+        print('[Dashboard] ℹ️ Logout cancelled - user chose not to logout');
+      }
+      print('[Dashboard] ========================================');
+    } catch (e, stackTrace) {
+      print('[Dashboard] ========================================');
+      print('[Dashboard] ❌ LOGOUT ERROR');
+      print('[Dashboard] ========================================');
+      print('[Dashboard] Error Type: ${e.runtimeType}');
+      print('[Dashboard] Error Message: $e');
+      print('[Dashboard] Stack Trace:');
+      print(stackTrace);
+      print('[Dashboard] ========================================');
+
+      Get.snackbar(
+        'Logout Error',
+        'Failed to logout. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
     }
   }
 

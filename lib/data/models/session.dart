@@ -43,8 +43,9 @@ class Session {
   // Initial conditions
   final PetPosition? initialPosition;
   final AnxietyLevel? initialAnxiety;
+  final bool verySick;
   final String? initialNotes;
-  
+
   // Annotations count (for display)
   final int annotationCount;
   
@@ -75,6 +76,7 @@ class Session {
     this.collarPhotoKey,
     this.initialPosition,
     this.initialAnxiety,
+    this.verySick = false,
     this.initialNotes,
     this.annotationCount = 0,
   });
@@ -153,13 +155,13 @@ class Session {
   
   factory Session.fromJson(Map<String, dynamic> json) {
     return Session(
-      id: json['session_id'] as String? ?? json['id'] as String,
-      sessionCode: json['session_code'] as String,
-      animalId: json['animal_id'] as String,
-      collarId: json['collar_id'] as String,
-      observerId: json['observer_id'] as String,
-      clinicId: json['clinic_id'] as String,
-      currentPhase: SessionPhase.fromString(json['current_phase'] as String),
+      id: json['session_id'] as String? ?? json['id'] as String? ?? '',
+      sessionCode: json['session_code'] as String? ?? '',
+      animalId: json['animal_id'] as String? ?? '',
+      collarId: json['collar_id'] as String? ?? '',
+      observerId: json['observer_id'] as String? ?? '',
+      clinicId: json['clinic_id'] as String? ?? '',
+      currentPhase: SessionPhase.fromString(json['current_phase'] as String? ?? 'pre_surgery'),
       surgeryType: json['surgery_type'] as String?,
       surgeryReason: json['surgery_reason'] as String?,
       asaStatus: json['asa_status'] != null
@@ -178,7 +180,9 @@ class Session {
       partialCollarData: json['partial_collar_data'] as bool? ?? false,
       useForTraining: json['use_for_training'] as bool? ?? true,
       overallQualityScore: json['overall_quality_score'] as int?,
-      startedAt: DateTime.parse(json['started_at'] as String),
+      startedAt: json['started_at'] != null
+          ? DateTime.parse(json['started_at'] as String)
+          : DateTime.now(),
       surgeryStartedAt: json['surgery_started_at'] != null
           ? DateTime.parse(json['surgery_started_at'] as String)
           : null,
@@ -192,9 +196,10 @@ class Session {
       initialPosition: json['initial_position'] != null
           ? PetPosition.fromString(json['initial_position'] as String)
           : null,
-      initialAnxiety: json['initial_anxiety'] != null
-          ? AnxietyLevel.fromString(json['initial_anxiety'] as String)
+      initialAnxiety: json['anxiety_level'] != null
+          ? AnxietyLevel.fromString(json['anxiety_level'] as String)
           : null,
+      verySick: json['very_sick'] as bool? ?? false,
       initialNotes: json['initial_notes'] as String?,
       annotationCount: json['annotation_count'] as int? ?? 0,
     );
@@ -221,13 +226,15 @@ class Session {
       'partial_collar_data': partialCollarData,
       'use_for_training': useForTraining,
       'overall_quality_score': overallQualityScore,
+      'created_at': startedAt.toIso8601String(),
       'started_at': startedAt.toIso8601String(),
       'surgery_started_at': surgeryStartedAt?.toIso8601String(),
       'surgery_ended_at': surgeryEndedAt?.toIso8601String(),
       'ended_at': endedAt?.toIso8601String(),
       'collar_photo_key': collarPhotoKey,
       'initial_position': initialPosition?.value,
-      'initial_anxiety': initialAnxiety?.value,
+      'anxiety_level': initialAnxiety?.value,
+      'very_sick': verySick,
       'initial_notes': initialNotes,
       'annotation_count': annotationCount,
     };
@@ -260,6 +267,7 @@ class Session {
     String? collarPhotoKey,
     PetPosition? initialPosition,
     AnxietyLevel? initialAnxiety,
+    bool? verySick,
     String? initialNotes,
     int? annotationCount,
   }) {
@@ -290,6 +298,7 @@ class Session {
       collarPhotoKey: collarPhotoKey ?? this.collarPhotoKey,
       initialPosition: initialPosition ?? this.initialPosition,
       initialAnxiety: initialAnxiety ?? this.initialAnxiety,
+      verySick: verySick ?? this.verySick,
       initialNotes: initialNotes ?? this.initialNotes,
       annotationCount: annotationCount ?? this.annotationCount,
     );

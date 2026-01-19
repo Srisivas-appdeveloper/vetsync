@@ -28,66 +28,107 @@ class SessionRepository {
     required String clinicId,
     PetPosition? initialPosition,
     AnxietyLevel? initialAnxiety,
+    bool verySick = false,
     String? initialNotes,
     String? collarPhotoPath,
   }) async {
-    final sessionId = _uuid.v4();
-    final sessionCode = _generateSessionCode();
-    final now = DateTime.now();
+    try {
+      final sessionId = _uuid.v4();
+      final sessionCode = _generateSessionCode();
+      final now = DateTime.now();
 
-    final session = Session(
-      id: sessionId,
-      sessionCode: sessionCode,
-      animalId: animalId,
-      collarId: collarId,
-      observerId: observerId,
-      clinicId: clinicId,
-      currentPhase: SessionPhase.preSurgery,
-      startedAt: now,
-      initialPosition: initialPosition,
-      initialAnxiety: initialAnxiety,
-      initialNotes: initialNotes,
-      collarPhotoKey: collarPhotoPath,
-    );
+      final session = Session(
+        id: sessionId,
+        sessionCode: sessionCode,
+        animalId: animalId,
+        collarId: collarId,
+        observerId: observerId,
+        clinicId: clinicId,
+        currentPhase: SessionPhase.preSurgery,
+        startedAt: now,
+        initialPosition: initialPosition,
+        initialAnxiety: initialAnxiety,
+        verySick: verySick,
+        initialNotes: initialNotes,
+        collarPhotoKey: collarPhotoPath,
+      );
 
-    // Save to local database
-    await _database.db.insertSession(
-      LocalSessionsCompanion(
-        id: Value(sessionId),
-        sessionCode: Value(sessionCode),
-        animalId: Value(animalId),
-        collarId: Value(collarId),
-        observerId: Value(observerId),
-        clinicId: Value(clinicId),
-        currentPhase: Value(SessionPhase.preSurgery.value),
-        startedAt: Value(now),
-        initialPosition: Value(initialPosition?.value),
-        initialAnxiety: Value(initialAnxiety?.value),
-        initialNotes: Value(initialNotes),
-        collarPhotoPath: Value(collarPhotoPath),
-        syncStatus: const Value('pending'),
-      ),
-    );
+      print('[SessionRepo] 📝 Creating session...');
+      print('[SessionRepo] Local DB insert payload:');
+      print('  - sessionId: $sessionId');
+      print('  - animalId: $animalId');
+      print('  - collarId: $collarId');
+      print('  - position: ${initialPosition?.value}');
+      print('  - anxiety: ${initialAnxiety?.value}');
+      print('  - verySick: $verySick');
+      print('  - notes: ${initialNotes?.substring(0, initialNotes.length > 50 ? 50 : initialNotes.length)}${(initialNotes?.length ?? 0) > 50 ? '...' : ''}');
 
-    // Store active session
-    await _storage.setActiveSessionId(sessionId);
+      // Save to local database
+      await _database.db.insertSession(
+        LocalSessionsCompanion(
+          id: Value(sessionId),
+          sessionCode: Value(sessionCode),
+          animalId: Value(animalId),
+          collarId: Value(collarId),
+          observerId: Value(observerId),
+          clinicId: Value(clinicId),
+          currentPhase: Value(SessionPhase.preSurgery.value),
+          startedAt: Value(now),
+          initialPosition: Value(initialPosition?.value),
+          initialAnxiety: Value(initialAnxiety?.value),
+          verySick: Value(verySick),
+          initialNotes: Value(initialNotes),
+          collarPhotoPath: Value(collarPhotoPath),
+          syncStatus: const Value('pending'),
+        ),
+      );
 
-    // Try to sync to server
-    if (_connectivity.isOnline.value) {
-      try {
-        final response = await _api.post(
-          ApiEndpoints.sessions,
-          data: session.toJson(),
-        );
-        await _database.db.updateSessionSyncStatus(sessionId, 'synced');
-        return Session.fromJson(response.data as Map<String, dynamic>);
-      } catch (e) {
-        // Will sync later
-        print('Session sync failed, will retry: $e');
+      print('[SessionRepo] ✅ Local DB insert successful');
+
+      // Store active session
+      await _storage.setActiveSessionId(sessionId);
+
+      // Try to sync to server
+      if (_connectivity.isOnline.value) {
+        try {
+          final payload = session.toJson();
+          final url = '${AppConfig.baseUrl}${ApiEndpoints.sessions}';
+
+          print('[SessionRepo] 🌐 Syncing to server...');
+          print('[SessionRepo] URL: POST $url');
+          print('[SessionRepo] Payload: ${jsonEncode(payload)}');
+
+          final response = await _api.post(
+            ApiEndpoints.sessions,
+            data: payload,
+          );
+
+          print('[SessionRepo] ✅ Server response received');
+          print('[SessionRepo] Response: ${jsonEncode(response.data)}');
+
+          // Extract session data from nested 'data' field if present
+          final sessionData = response.data is Map<String, dynamic> && response.data.containsKey('data')
+              ? response.data['data'] as Map<String, dynamic>
+              : response.data as Map<String, dynamic>;
+
+          await _database.db.updateSessionSyncStatus(sessionId, 'synced');
+          return Session.fromJson(sessionData);
+        } catch (e, stackTrace) {
+          // Will sync later
+          print('[SessionRepo] ⚠️ Server sync failed (will retry later)');
+          print('[SessionRepo] Error: $e');
+          print('[SessionRepo] Stack trace: $stackTrace');
+        }
+      } else {
+        print('[SessionRepo] 📴 Offline - skipping server sync');
       }
-    }
 
-    return session;
+      return session;
+    } catch (e, stackTrace) {
+      print('[SessionRepo] ❌ ERROR creating session: $e');
+      print('[SessionRepo] Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   /// Get session by ID
@@ -95,7 +136,11 @@ class SessionRepository {
     if (_connectivity.isOnline.value) {
       try {
         final response = await _api.get(ApiEndpoints.session(id));
-        return Session.fromJson(response.data as Map<String, dynamic>);
+        // Extract session data from nested 'data' field if present
+        final sessionData = response.data is Map<String, dynamic> && response.data.containsKey('data')
+            ? response.data['data'] as Map<String, dynamic>
+            : response.data as Map<String, dynamic>;
+        return Session.fromJson(sessionData);
       } catch (e) {
         return _getLocalSession(id);
       }
@@ -202,7 +247,7 @@ class SessionRepository {
     // Sync to server
     if (_connectivity.isOnline.value) {
       try {
-        await _api.patch(
+        await _api.post(
           ApiEndpoints.sessionBaseline(sessionId),
           data: baseline.toJson(),
         );
@@ -296,7 +341,11 @@ class SessionRepository {
       ApiEndpoints.joinSession,
       data: {'code': code},
     );
-    return Session.fromJson(response.data as Map<String, dynamic>);
+    // Extract session data from nested 'data' field if present
+    final sessionData = response.data is Map<String, dynamic> && response.data.containsKey('data')
+        ? response.data['data'] as Map<String, dynamic>
+        : response.data as Map<String, dynamic>;
+    return Session.fromJson(sessionData);
   }
 
   /// Get today's sessions
@@ -357,6 +406,7 @@ class SessionRepository {
       initialAnxiety: local.initialAnxiety != null
           ? AnxietyLevel.fromString(local.initialAnxiety!)
           : null,
+      verySick: local.verySick,
       initialNotes: local.initialNotes,
     );
   }

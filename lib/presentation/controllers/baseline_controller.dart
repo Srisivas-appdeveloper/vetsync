@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../app/routes/app_pages.dart';
+import '../../app/themes/app_colors.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/models/models.dart';
 import '../../data/services/ble_service.dart';
@@ -19,18 +20,25 @@ class BaselineController extends GetxController {
   // Collection state
   final RxBool isCollecting = false.obs;
   final RxBool isComplete = false.obs;
-  final RxBool isPaused = false.obs;
 
   // Timer
   Timer? _timer;
   final RxInt remainingSeconds = AppConfig.baselineDurationSeconds.obs;
   final RxInt elapsedSeconds = 0.obs;
+  int _targetDurationSeconds = AppConfig.baselineDurationSeconds; // Dynamic target that updates on extension
+  DateTime? _lastExtensionTime; // Track when we last extended to prevent repeated snackbars
 
   // Quality tracking
   final RxInt currentQuality = 0.obs;
   final RxDouble avgQuality = 0.0.obs;
   final RxInt validSamples = 0.obs;
   final RxInt totalSamples = 0.obs;
+
+  // Dynamic completion criteria
+  final RxBool canComplete = false.obs;
+  final RxDouble currentStability = 0.0.obs;
+  final RxDouble currentHRConfidence = 0.0.obs;
+  final RxString statusMessage = 'Waiting to start...'.obs;
 
   // Vitals tracking
   final RxList<Vitals> collectedVitals = <Vitals>[].obs;
@@ -81,7 +89,7 @@ class BaselineController extends GetxController {
   /// Setup listener for vitals data
   void _setupVitalsListener() {
     _vitalsSubscription = _bleService.vitalsStream.listen((vitals) {
-      if (!isCollecting.value || isPaused.value) return;
+      if (!isCollecting.value) return;
 
       // === DEBUG LOGGING ===
       _packetCount++;
@@ -139,7 +147,11 @@ class BaselineController extends GetxController {
           collectedVitals.add(vitals);
           heartRateSamples.add(vitals.heartRateBpm.toDouble());
           respiratorySamples.add(vitals.respiratoryRateBpm.toDouble());
-          temperatureSamples.add(vitals.temperatureC);
+
+          // Only add temperature if valid (not NaN)
+          if (!vitals.temperatureC.isNaN) {
+            temperatureSamples.add(vitals.temperatureC);
+          }
         }
       }
 
@@ -169,12 +181,13 @@ class BaselineController extends GetxController {
     if (isCollecting.value) return;
 
     isCollecting.value = true;
-    isPaused.value = false;
     isComplete.value = false;
 
     // Reset counters
     elapsedSeconds.value = 0;
     remainingSeconds.value = AppConfig.baselineDurationSeconds;
+    _targetDurationSeconds = AppConfig.baselineDurationSeconds; // Initialize dynamic target
+    _lastExtensionTime = null; // Reset extension timestamp
     validSamples.value = 0;
     totalSamples.value = 0;
     avgQuality.value = 0;
@@ -202,26 +215,158 @@ class BaselineController extends GetxController {
 
     // Start timer
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!isPaused.value) {
-        elapsedSeconds.value++;
-        remainingSeconds.value =
-            AppConfig.baselineDurationSeconds - elapsedSeconds.value;
+      elapsedSeconds.value++;
+      remainingSeconds.value = _targetDurationSeconds - elapsedSeconds.value;
 
-        if (remainingSeconds.value <= 0) {
+      // Check completion criteria every second
+      _checkCompletionCriteria();
+
+      if (remainingSeconds.value <= 0) {
+        // Minimum duration reached
+        if (canComplete.value) {
           _completeCollection();
+        } else {
+          _extendBaseline();
         }
       }
     });
   }
 
-  /// Pause collection
-  void pauseCollection() {
-    isPaused.value = true;
+  /// Check if baseline can complete early
+  void _checkCompletionCriteria() {
+    // Can complete if:
+    // 1. At least minimum duration elapsed
+    // 2. Enough valid HR measurements
+    // 3. HR has low coefficient of variation (stable)
+    // 4. Average quality above threshold
+
+    if (elapsedSeconds.value < AppConfig.baselineMinimumSeconds) {
+      canComplete.value = false;
+      _updateStatusMessage();
+      return;
+    }
+
+    // Check if we have enough valid samples
+    final validHRCount = heartRateSamples.length;
+    if (validHRCount < AppConfig.baselineMinimumHRSamples) {
+      canComplete.value = false;
+      statusMessage.value = 'Collecting samples... ($validHRCount/${AppConfig.baselineMinimumHRSamples})';
+      return;
+    }
+
+    // Calculate HR coefficient of variation
+    final hrCV = _calculateCoefficientOfVariation(heartRateSamples);
+
+    // Calculate current stability (based on quality)
+    currentStability.value = avgQuality.value;
+
+    // Can complete if all criteria met
+    canComplete.value = (
+      currentStability.value >= AppConfig.baselineStabilityThreshold * 100 &&
+      hrCV < AppConfig.baselineCVThreshold
+    );
+
+    _updateStatusMessage();
   }
 
-  /// Resume collection
-  void resumeCollection() {
-    isPaused.value = false;
+  /// Calculate coefficient of variation
+  double _calculateCoefficientOfVariation(List<double> samples) {
+    if (samples.isEmpty) return 1.0;
+
+    final mean = samples.reduce((a, b) => a + b) / samples.length;
+    if (mean == 0) return 1.0;
+
+    final variance = samples.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) / samples.length;
+    final stdDev = sqrt(variance);
+
+    return stdDev / mean;
+  }
+
+  /// Update status message based on current state
+  void _updateStatusMessage() {
+    final stability = currentStability.value;
+    final validHRCount = heartRateSamples.length;
+
+    if (validHRCount < AppConfig.baselineMinimumHRSamples) {
+      statusMessage.value = 'Collecting samples... ($validHRCount/${AppConfig.baselineMinimumHRSamples})';
+    } else if (stability < 40) {
+      statusMessage.value = 'Detecting movement... keep pet still';
+    } else if (stability < 60) {
+      statusMessage.value = 'Signal stabilizing...';
+    } else if (canComplete.value) {
+      statusMessage.value = 'Ready to complete - High quality data';
+    } else {
+      statusMessage.value = 'Collecting high-quality data...';
+    }
+  }
+
+  /// Extend baseline if quality not met
+  void _extendBaseline() {
+    final totalDuration = elapsedSeconds.value;
+    final now = DateTime.now();
+
+    // Check if we've extended recently (within last 5 seconds) to prevent repeated snackbars
+    if (_lastExtensionTime != null) {
+      final timeSinceLastExtension = now.difference(_lastExtensionTime!);
+      if (timeSinceLastExtension.inSeconds < 5) {
+        print('[Baseline] 🔇 Extension already triggered ${timeSinceLastExtension.inSeconds}s ago, skipping snackbar');
+        return; // Don't extend again so soon
+      }
+    }
+
+    if (totalDuration >= AppConfig.baselineMaximumSeconds) {
+      // Max duration reached, complete anyway
+      print('[Baseline] ⚠️ Maximum duration reached, completing with current quality');
+      Get.snackbar(
+        'Baseline Extended to Maximum',
+        'Completing with current quality (${avgQuality.value.round()}%). Consider repositioning collar for better results.',
+        backgroundColor: AppColors.warning,
+        duration: const Duration(seconds: 5),
+      );
+      _completeCollection();
+    } else {
+      // Add 1 more minute (up to max)
+      print('[Baseline] ⏱️ Extending baseline by 1 minute');
+
+      // Update the dynamic target duration to next minute boundary
+      final targetDuration = (totalDuration ~/ 60 + 1) * 60; // Round up to next minute
+      _targetDurationSeconds = targetDuration.clamp(0, AppConfig.baselineMaximumSeconds);
+      remainingSeconds.value = _targetDurationSeconds - elapsedSeconds.value;
+
+      print('[Baseline] New target duration: $_targetDurationSeconds seconds');
+      print('[Baseline] Remaining seconds: ${remainingSeconds.value}');
+
+      // Update last extension time
+      _lastExtensionTime = now;
+
+      Get.snackbar(
+        'Baseline Extended',
+        'Signal quality not yet stable. Collecting up to ${AppConfig.baselineMaximumSeconds ~/ 60} minutes total.',
+        backgroundColor: AppColors.warning,
+        duration: const Duration(seconds: 5),
+      );
+    }
+  }
+
+  /// Abort baseline collection
+  Future<void> abortCollection() async {
+    print('[Baseline] ⛔ Aborting baseline collection');
+
+    // Stop timer and collection
+    _timer?.cancel();
+    isCollecting.value = false;
+    isComplete.value = false;
+
+    // Navigate back
+    Get.back();
+
+    // Show snackbar
+    Get.snackbar(
+      'Baseline Aborted',
+      'You can restart baseline collection when ready.',
+      backgroundColor: AppColors.warning,
+      duration: const Duration(seconds: 5),
+    );
   }
 
   /// Complete baseline collection
@@ -240,6 +385,35 @@ class BaselineController extends GetxController {
         durationSeconds: elapsedSeconds.value,
         collectedAt: DateTime.now().toUtc(),
       );
+
+      // Navigate to baseline complete page
+      print('[Baseline] ========================================');
+      print('[Baseline] 🚀 Attempting navigation to baseline complete...');
+      print('[Baseline] Target Route: ${Routes.baselineComplete}');
+      try {
+        Get.toNamed(Routes.baselineComplete);
+        print('[Baseline] ✅ Navigation successful');
+        print('[Baseline] ========================================');
+      } catch (e, stackTrace) {
+        print('[Baseline] ========================================');
+        print('[Baseline] ❌ NAVIGATION ERROR');
+        print('[Baseline] ========================================');
+        print('[Baseline] Error Type: ${e.runtimeType}');
+        print('[Baseline] Error Message: $e');
+        print('[Baseline] Attempted Route: ${Routes.baselineComplete}');
+        print('[Baseline] Stack Trace:');
+        print(stackTrace);
+        print('[Baseline] ========================================');
+
+        Get.snackbar(
+          'Navigation Error',
+          'Baseline collected but failed to navigate. Check logs.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
+          duration: const Duration(seconds: 5),
+        );
+      }
     }
   }
 
@@ -301,7 +475,8 @@ class BaselineController extends GetxController {
         baseline: baselineData.value!,
       );
 
-      // Update session controller
+      // Update session controller with baseline data
+      _sessionController.baselineData.value = baselineData.value;
       _sessionController.currentSession.value = _sessionController
           .currentSession
           .value
@@ -310,45 +485,147 @@ class BaselineController extends GetxController {
             baselineQuality: baselineData.value!.qualityScore,
           );
 
+      print('[Baseline] ✅ Baseline saved successfully');
+      print('[Baseline] Quality: ${baselineData.value!.qualityScore}%');
+      print('[Baseline] HR: ${baselineData.value!.heartRate.mean.round()} bpm');
+      print('[Baseline] RR: ${baselineData.value!.respiratoryRate.mean.round()} brpm');
+
       // Navigate to baseline complete
-      Get.toNamed(Routes.baselineComplete);
+      print('[Baseline] ========================================');
+      print('[Baseline] 💾 SAVE AND PROCEED BUTTON PRESSED');
+      print('[Baseline] 🚀 Attempting navigation to baseline complete...');
+      print('[Baseline] Target Route: ${Routes.baselineComplete}');
+      try {
+        Get.toNamed(Routes.baselineComplete);
+        print('[Baseline] ✅ Navigation successful');
+        print('[Baseline] ========================================');
+      } catch (e, stackTrace) {
+        print('[Baseline] ========================================');
+        print('[Baseline] ❌ NAVIGATION ERROR');
+        print('[Baseline] ========================================');
+        print('[Baseline] Error Type: ${e.runtimeType}');
+        print('[Baseline] Error Message: $e');
+        print('[Baseline] Attempted Route: ${Routes.baselineComplete}');
+        print('[Baseline] Stack Trace:');
+        print(stackTrace);
+        print('[Baseline] ========================================');
+
+        Get.snackbar(
+          'Navigation Error',
+          'Baseline saved but failed to navigate. Check logs.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
+          duration: const Duration(seconds: 5),
+        );
+      }
     } catch (e) {
       Get.snackbar('Error', 'Failed to save baseline');
     }
   }
 
   /// Restart baseline collection
-  void restartCollection() {
+  Future<void> restartCollection() async {
+    print('[Baseline] 🔄 Restarting baseline collection');
+
+    // 1. Stop current collection
     _timer?.cancel();
+    isCollecting.value = false;
     isComplete.value = false;
+
+    // 2. Clear all buffers and data
+    collectedVitals.clear();
+    heartRateSamples.clear();
+    respiratorySamples.clear();
+    temperatureSamples.clear();
+    waveformBuffer.clear();
     baselineData.value = null;
+
+    // 3. Reset counters
+    elapsedSeconds.value = 0;
+    remainingSeconds.value = AppConfig.baselineDurationSeconds;
+    _targetDurationSeconds = AppConfig.baselineDurationSeconds; // Reset dynamic target
+    _lastExtensionTime = null; // Reset extension timestamp
+    validSamples.value = 0;
+    totalSamples.value = 0;
+    avgQuality.value = 0;
+    currentQuality.value = 0;
+
+    // 4. Reset debug counters
+    _packetCount = 0;
+    _startTime = null;
+    showNoSignalWarning.value = false;
+    processingStatus.value = 'Waiting for data...';
+    bufferedSamplesCount.value = 0;
+
+    // 5. DO NOT disconnect BLE (firmware keeps streaming)
+    // 6. DO NOT send any command to firmware (no pause/resume command exists)
+
+    // 7. Restart collection
+    print('[Baseline] ✅ Restart complete, starting fresh collection');
     startCollection();
   }
 
   /// Skip baseline (not recommended)
   Future<void> skipBaseline() async {
-    final confirmed = await Get.dialog<bool>(
-      AlertDialog(
-        title: const Text('Skip Baseline?'),
-        content: const Text(
-          'Skipping baseline collection will reduce data quality and '
-          'algorithm accuracy. This is not recommended.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(result: false),
-            child: const Text('Collect Baseline'),
-          ),
-          TextButton(
-            onPressed: () => Get.back(result: true),
-            child: const Text('Skip'),
-          ),
-        ],
-      ),
-    );
+    print('[Baseline] ========================================');
+    print('[Baseline] ⏭️ SKIP BASELINE BUTTON PRESSED');
+    print('[Baseline] ========================================');
 
-    if (confirmed == true) {
-      Get.toNamed(Routes.preSurgery);
+    try {
+      final confirmed = await Get.dialog<bool>(
+        AlertDialog(
+          title: const Text('Skip Baseline?'),
+          content: const Text(
+            'Skipping baseline collection will reduce data quality and '
+            'algorithm accuracy. This is not recommended.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                print('[Baseline] 📱 Skip cancelled - user chose to collect baseline');
+                Get.back(result: false);
+              },
+              child: const Text('Collect Baseline'),
+            ),
+            TextButton(
+              onPressed: () {
+                print('[Baseline] ⚠️ Skip confirmed - proceeding without baseline');
+                Get.back(result: true);
+              },
+              child: const Text('Skip'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true) {
+        print('[Baseline] 🚀 Attempting navigation to pre-surgery...');
+        print('[Baseline] Target Route: ${Routes.preSurgery}');
+        Get.toNamed(Routes.preSurgery);
+        print('[Baseline] ✅ Navigation successful');
+      } else {
+        print('[Baseline] ℹ️ User chose to continue baseline collection');
+      }
+      print('[Baseline] ========================================');
+    } catch (e, stackTrace) {
+      print('[Baseline] ========================================');
+      print('[Baseline] ❌ SKIP BASELINE ERROR');
+      print('[Baseline] ========================================');
+      print('[Baseline] Error Type: ${e.runtimeType}');
+      print('[Baseline] Error Message: $e');
+      print('[Baseline] Stack Trace:');
+      print(stackTrace);
+      print('[Baseline] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to skip baseline. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
     }
   }
 

@@ -26,6 +26,9 @@ class SessionController extends GetxController {
   final Rx<Animal?> currentAnimal = Rx<Animal?>(null);
   final Rx<Collar?> currentCollar = Rx<Collar?>(null);
 
+  // Baseline data (stored separately for easy reactive access)
+  final Rx<BaselineData?> baselineData = Rx<BaselineData?>(null);
+
   // Session state
   final RxBool sessionPaused = false.obs;
   // Helper to distinguish between ended vs paused
@@ -145,6 +148,21 @@ class SessionController extends GetxController {
 
   /// Check battery and show warnings
   void _checkBatteryWarning(int battery) {
+    // Don't create annotations during pre-surgery/baseline phase
+    if (currentSession.value?.currentPhase == SessionPhase.preSurgery) {
+      // Still show snackbar warnings, just no annotations
+      if (battery <= 5) {
+        Get.snackbar(
+          'Battery Emergency',
+          'Collar battery at $battery%. Swap collar now!',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 10),
+        );
+      }
+      return;
+    }
+
     if (battery <= 5) {
       _addSystemAnnotation(
         'Battery emergency ($battery%) - Swap collar immediately',
@@ -174,9 +192,24 @@ class SessionController extends GetxController {
     String? collarPhotoPath,
     PetPosition? position,
     AnxietyLevel? anxiety,
+    bool verySick = false,
     String? notes,
   }) async {
     try {
+      print('[Session] 📝 ========================================');
+      print('[Session] 📝 INITIALIZING NEW SESSION');
+      print('[Session] 📝 ========================================');
+      print('[Session] Animal: ${animal.name} (ID: ${animal.id})');
+      print('[Session] Collar: ${collar.serialNumber} (ID: ${collar.id})');
+      print('[Session] Observer ID: $observerId');
+      print('[Session] Clinic ID: $clinicId');
+      print('[Session] Position: ${position?.value ?? 'null'}');
+      print('[Session] Anxiety: ${anxiety?.value ?? 'null'}');
+      print('[Session] Very Sick: $verySick');
+      print('[Session] Notes: ${notes ?? 'null'}');
+      print('[Session] Collar Photo: ${collarPhotoPath ?? 'null'}');
+      print('[Session] 📝 ========================================');
+
       final session = await _sessionRepo.createSession(
         animalId: animal.id,
         collarId: collar.id,
@@ -184,9 +217,12 @@ class SessionController extends GetxController {
         clinicId: clinicId,
         initialPosition: position,
         initialAnxiety: anxiety,
+        verySick: verySick,
         initialNotes: notes,
         collarPhotoPath: collarPhotoPath,
       );
+
+      print('[Session] ✅ Session created with ID: ${session.id}');
 
       currentSession.value = session;
       currentAnimal.value = animal;
@@ -194,16 +230,80 @@ class SessionController extends GetxController {
       sessionStartTime.value = DateTime.now();
 
       // Store active session ID
+      print('[Session] 💾 Storing session ID and collar ID...');
       await _storage.setActiveSessionId(session.id);
       await _storage.setLastCollarId(collar.id);
 
       // Start duration timer
+      print('[Session] ⏱️ Starting duration timer...');
       _startDurationTimer();
 
+      print('[Session] ✅ Session initialization complete');
+      print('[Session] 📝 ========================================');
       return true;
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to create session');
+    } catch (e, stack) {
+      print('[Session] ❌ ========================================');
+      print('[Session] ❌ ERROR INITIALIZING SESSION');
+      print('[Session] ❌ ========================================');
+      print('[Session] Error: $e');
+      print('[Session] Stack trace:');
+      print('$stack');
+      print('[Session] ❌ ========================================');
+
+      Get.snackbar(
+        'Error',
+        'Failed to create session: ${e.toString()}',
+        duration: const Duration(seconds: 5),
+        backgroundColor: Colors.red[100],
+        colorText: Colors.red[900],
+      );
       return false;
+    }
+  }
+
+  /// Load baseline data for current session
+  /// Called when entering pre-surgery phase or when baseline might be missing
+  Future<void> loadBaselineData() async {
+    if (currentSession.value == null) {
+      print('[Session] Cannot load baseline - no active session');
+      return;
+    }
+
+    final sessionId = currentSession.value!.id;
+
+    // Check if already in memory
+    if (baselineData.value != null) {
+      print('[Session] Baseline already loaded in memory');
+      return;
+    }
+
+    // Check if session object has baseline
+    if (currentSession.value!.baselineData != null) {
+      print('[Session] Loading baseline from session object');
+      baselineData.value = currentSession.value!.baselineData;
+      return;
+    }
+
+    print('[Session] Attempting to load baseline from database...');
+
+    try {
+      // Reload session from database to get latest baseline
+      final freshSession = await _sessionRepo.getSession(sessionId);
+
+      if (freshSession?.baselineData != null) {
+        print('[Session] ✅ Loaded baseline from database');
+        baselineData.value = freshSession!.baselineData;
+
+        // Update current session with baseline
+        currentSession.value = freshSession;
+        return;
+      }
+
+      print('[Session] No baseline found in database - this is OK (baseline is optional)');
+    } catch (e, stack) {
+      print('[Session] ❌ Error loading baseline: $e');
+      print('[Session] Stack: $stack');
+      // Don't show error to user - missing baseline is acceptable
     }
   }
 
@@ -263,8 +363,11 @@ class SessionController extends GetxController {
   }) async {
     if (currentSession.value == null) return false;
 
+    print('[Session] 🚀 Starting surgery sequence...');
+
     try {
       // Update session with surgery details
+      print('[Session] 📝 Updating surgery details...');
       await _sessionRepo.updateSurgeryDetails(
         sessionId: currentSession.value!.id,
         surgeryType: surgeryType,
@@ -273,6 +376,7 @@ class SessionController extends GetxController {
       );
 
       // Transition to surgery phase
+      print('[Session] 🔄 Updating session phase to SURGERY...');
       await _sessionRepo.updatePhase(
         currentSession.value!.id,
         SessionPhase.surgery,
@@ -280,22 +384,37 @@ class SessionController extends GetxController {
 
       // 🔥 NEW: Connect to websocket for real-time data streaming
       try {
-        await _wsService.connectToRelay(
-          sessionId: currentSession.value!.id,
-        );
+        print('[Session] 🔌 Connecting to WebSocket...');
+        await _wsService.connectToRelay(sessionId: currentSession.value!.id);
         print('[Session] 📡 WebSocket connected for surgery monitoring');
-      } catch (e) {
-        print('[Session] ⚠️ WebSocket connection failed: $e');
+      } catch (e, stackTrace) {
+        print('[Session] ⚠️ WebSocket connection failed (non-fatal): $e');
+        print('[Session] ✓ Continuing without WebSocket (offline mode)');
         // Continue anyway - websocket is optional for offline mode
       }
 
       // Switch collar to raw mode for calibration
-      await _bleService.switchMode(
-        FirmwareMode.raw,
-        sessionId: currentSession.value!.id.hashCode,
-      );
+      print('[Session] 📡 Switching collar to RAW mode...');
+      try {
+        await _bleService.switchMode(
+          FirmwareMode.raw,
+          sessionId: currentSession.value!.id.hashCode,
+        );
+        print('[Session] ⏳ Waiting for mode switch to stabilize...');
+
+        // Give the collar time to stabilize in new mode before proceeding
+        await Future.delayed(const Duration(milliseconds: 1500));
+
+        print('[Session] ✅ Collar switched to RAW mode');
+      } catch (e) {
+        print('[Session] ❌ Failed to switch collar mode: $e');
+        // Decide if this is fatal. Usually yes, as surgery needs high-res data.
+        // For now we rethrow to hit the main catch block and show error.
+        rethrow;
+      }
 
       // Update local session state
+      print('[Session] 💾 Updating local session state...');
       currentSession.value = currentSession.value!.copyWith(
         currentPhase: SessionPhase.surgery,
         surgeryType: surgeryType,
@@ -307,9 +426,18 @@ class SessionController extends GetxController {
       // Add annotation
       _addSystemAnnotation('Surgery started: $surgeryType');
 
+      print('[Session] ✅ Surgery start sequence COMPLETE');
       return true;
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to start surgery phase');
+    } catch (e, stack) {
+      print('[Session] ❌ ERROR starting surgery: $e');
+      print(stack);
+      Get.snackbar(
+        'Error',
+        'Failed to start surgery: ${e.toString()}',
+        duration: const Duration(seconds: 5),
+        backgroundColor: Colors.red[100],
+        colorText: Colors.red[900],
+      );
       return false;
     }
   }

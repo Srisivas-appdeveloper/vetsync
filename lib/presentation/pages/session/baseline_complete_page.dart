@@ -9,7 +9,7 @@ import '../../../data/models/models.dart';
 import '../../controllers/session_controller.dart';
 import '../../controllers/baseline_controller.dart';
 
-/// Baseline complete page - shows baseline results and proceed options
+/// Baseline complete page - unified completion screen with quality-based gating
 class BaselineCompletePage extends StatelessWidget {
   const BaselineCompletePage({super.key});
 
@@ -17,279 +17,458 @@ class BaselineCompletePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final sessionController = Get.find<SessionController>();
     final baselineController = Get.find<BaselineController>();
-    
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Baseline Complete'),
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: false, // Cannot go back
       ),
-      body: SingleChildScrollView(
-        padding: AppSpacing.screenPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 24),
-            
-            // Success icon
-            const Icon(
-              Icons.check_circle,
-              size: 80,
-              color: AppColors.success,
+      body: Obx(() {
+        final baseline = baselineController.baselineData.value;
+        if (baseline == null) {
+          return const Center(child: Text('No baseline data available'));
+        }
+
+        return SingleChildScrollView(
+          padding: AppSpacing.screenPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+
+              // Quality Header
+              _buildQualityHeader(baseline),
+              const SizedBox(height: 24),
+
+              // Patient Info
+              _buildPatientInfo(sessionController),
+              const SizedBox(height: 24),
+
+              // Statistics
+              _buildStatistics(baseline),
+              const SizedBox(height: 24),
+
+              // Decision Gating
+              _buildDecisionSection(baseline, baselineController, sessionController),
+              const SizedBox(height: 24),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildQualityHeader(BaselineData baseline) {
+    final quality = baseline.qualityScore;
+
+    // Use COMPUTED quality, not firmware's constant
+    final qualityColor = quality >= 75 ? AppColors.success :
+                         quality >= 60 ? AppColors.warning : AppColors.error;
+
+    final qualityLabel = quality >= 75 ? 'Excellent' :
+                         quality >= 60 ? 'Good' : 'Poor';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: qualityColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: qualityColor, width: 2),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            quality >= 60 ? Icons.check_circle : Icons.warning,
+            size: 48,
+            color: qualityColor,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Baseline Complete',
+            style: AppTypography.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Quality: $qualityLabel ($quality%)',
+            style: AppTypography.titleMedium.copyWith(
+              color: qualityColor,
             ),
-            const SizedBox(height: 16),
-            
-            Text(
-              'Baseline Collection Complete',
-              style: AppTypography.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            
-            Obx(() => Text(
-              'Patient: ${sessionController.currentAnimal.value?.name ?? "Unknown"}',
-              style: AppTypography.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            )),
-            const SizedBox(height: 32),
-            
-            // Results card
-            _buildResultsCard(baselineController),
-            const SizedBox(height: 16),
-            
-            // Quality assessment
-            _buildQualityAssessment(baselineController),
-            const SizedBox(height: 32),
-            
-            // Actions
-            ElevatedButton(
-              onPressed: () => Get.offNamed(Routes.preSurgery),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: const Text('Continue to Pre-Surgery'),
-            ),
-            const SizedBox(height: 12),
-            
-            OutlinedButton(
-              onPressed: () {
-                baselineController.restartCollection();
-                Get.back();
-              },
-              child: const Text('Recollect Baseline'),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
-  
-  Widget _buildResultsCard(BaselineController controller) {
-    return Obx(() {
-      final baseline = controller.baselineData.value;
-      
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Baseline Values', style: AppTypography.titleMedium),
-            const Divider(height: 24),
-            
-            // Heart Rate
-            _resultRow(
-              icon: Icons.favorite,
-              iconColor: AppColors.error,
-              label: 'Heart Rate',
-              value: baseline != null 
-                  ? '${baseline.heartRate.mean.round()} bpm'
-                  : '-- bpm',
-              range: baseline != null
-                  ? '${baseline.heartRate.min.round()}-${baseline.heartRate.max.round()}'
-                  : '--',
-            ),
-            const SizedBox(height: 16),
-            
-            // Respiratory Rate
-            _resultRow(
-              icon: Icons.air,
-              iconColor: AppColors.primary,
-              label: 'Respiratory Rate',
-              value: baseline != null
-                  ? '${baseline.respiratoryRate.mean.round()} brpm'
-                  : '-- brpm',
-              range: baseline != null
-                  ? '${baseline.respiratoryRate.min.round()}-${baseline.respiratoryRate.max.round()}'
-                  : '--',
-            ),
-            const SizedBox(height: 16),
-            
-            // Temperature
-            _resultRow(
-              icon: Icons.thermostat,
-              iconColor: AppColors.warning,
-              label: 'Temperature',
-              value: baseline != null
-                  ? '${baseline.temperature.mean.toStringAsFixed(1)} °C'
-                  : '-- °C',
-              range: baseline != null
-                  ? '${baseline.temperature.min.toStringAsFixed(1)}-${baseline.temperature.max.toStringAsFixed(1)}'
-                  : '--',
-            ),
-            const Divider(height: 24),
-            
-            // Duration
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+  Widget _buildPatientInfo(SessionController sessionController) {
+    final animal = sessionController.currentAnimal.value;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            animal?.species == Species.dog ? Icons.pets : Icons.cruelty_free,
+            size: 32,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Collection Duration', style: AppTypography.bodySmall),
                 Text(
-                  baseline?.formattedDuration ?? '--:--',
-                  style: AppTypography.labelMedium,
+                  animal?.name ?? 'Unknown',
+                  style: AppTypography.titleMedium,
+                ),
+                Text(
+                  '${animal?.breed ?? 'Unknown'} • ${animal?.weightDisplay ?? 'Unknown'}',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
-          ],
-        ),
-      );
-    });
+          ),
+        ],
+      ),
+    );
   }
-  
-  Widget _resultRow({
-    required IconData icon,
-    required Color iconColor,
-    required String label,
-    required String value,
-    required String range,
-  }) {
-    return Row(
+
+  Widget _buildStatistics(BaselineData baseline) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          'Baseline Statistics',
+          style: AppTypography.headlineSmall,
+        ),
+        const SizedBox(height: 16),
+
+        // HR
+        _buildVitalCard(
+          icon: Icons.favorite,
+          color: AppColors.error,
+          label: 'Heart Rate',
+          value: '${baseline.heartRate.mean.round()} bpm',
+          range: '${baseline.heartRate.min.round()}-${baseline.heartRate.max.round()}',
+          stdDev: baseline.heartRate.stdDev,
+        ),
+        const SizedBox(height: 12),
+
+        // RR
+        _buildVitalCard(
+          icon: Icons.air,
+          color: AppColors.info,
+          label: 'Respiratory Rate',
+          value: '${baseline.respiratoryRate.mean.round()} brpm',
+          range: '${baseline.respiratoryRate.min.round()}-${baseline.respiratoryRate.max.round()}',
+          stdDev: baseline.respiratoryRate.stdDev,
+        ),
+        const SizedBox(height: 12),
+
+        // Temperature (ONLY IF VALID!)
+        if (baseline.temperature.mean > 15 && baseline.temperature.mean < 45)
+          _buildVitalCard(
+            icon: Icons.thermostat,
+            color: AppColors.warning,
+            label: 'Temperature',
+            value: '${baseline.temperature.mean.toStringAsFixed(1)} °C',
+            range: '${baseline.temperature.min.toStringAsFixed(1)}-${baseline.temperature.max.toStringAsFixed(1)}',
+            stdDev: baseline.temperature.stdDev,
+          ),
+        const SizedBox(height: 16),
+
+        // Collection metadata
         Container(
-          width: 40,
-          height: 40,
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: AppColors.surfaceVariant,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, color: iconColor, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: AppTypography.bodySmall),
-              const SizedBox(height: 2),
-              Text(value, style: AppTypography.titleMedium),
+              _metadataRow('Duration:', baseline.formattedDuration),
+              const SizedBox(height: 8),
+              _metadataRow('Samples Collected:', '${baseline.durationSeconds * 10}'), // Approximate: 10 Hz
             ],
           ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text('Range', style: AppTypography.caption),
-            Text(range, style: AppTypography.labelSmall),
-          ],
         ),
       ],
     );
   }
-  
-  Widget _buildQualityAssessment(BaselineController controller) {
-    return Obx(() {
-      final baseline = controller.baselineData.value;
-      final quality = baseline?.qualityScore ?? 0;
-      
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _getQualityBackgroundColor(quality),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _getQualityColor(quality).withOpacity(0.3)),
+
+  Widget _buildVitalCard({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String value,
+    required String range,
+    required double stdDev,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: AppTypography.labelSmall),
+                const SizedBox(height: 4),
+                Text(value, style: AppTypography.titleLarge),
+                const SizedBox(height: 2),
+                Text(
+                  'Range: $range • SD: ${stdDev.toStringAsFixed(1)}',
+                  style: AppTypography.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metadataRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: AppTypography.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: _getQualityColor(quality),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  '$quality%',
-                  style: AppTypography.labelMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+        Text(
+          value,
+          style: AppTypography.labelMedium,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDecisionSection(
+    BaselineData baseline,
+    BaselineController baselineController,
+    SessionController sessionController,
+  ) {
+    final quality = baseline.qualityScore;
+
+    if (quality >= 60) {
+      // GOOD QUALITY: Single clear CTA
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.successSurface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, color: AppColors.success),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Baseline quality is good. Ready to proceed.',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: AppColors.successDark,
+                    ),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _proceedToPreSurgery(baselineController, sessionController),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text(
+                'Continue to Pre-Surgery',
+                style: TextStyle(fontSize: 18),
               ),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _getQualityLabel(quality),
-                    style: AppTypography.titleSmall.copyWith(
-                      color: _getQualityTextColor(quality),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _getQualityDescription(quality),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: _getQualityTextColor(quality).withOpacity(0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+
+          TextButton(
+            onPressed: () => _recollectBaseline(baselineController),
+            child: const Text('Recollect Baseline'),
+          ),
+        ],
       );
-    });
+    } else {
+      // POOR QUALITY: Recommend recollection
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.warningSurface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.warning, color: AppColors.warning),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Baseline quality is below recommended threshold',
+                        style: AppTypography.titleSmall.copyWith(
+                          color: AppColors.warningDark,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Recommendations:\n'
+                  '• Ensure collar is properly positioned\n'
+                  '• Keep pet calm and still\n'
+                  '• Check for environmental interference',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.warningDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _recollectBaseline(baselineController),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warning,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text(
+                'Recollect Baseline',
+                style: TextStyle(fontSize: 18),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => _showProceedAnywayDialog(baselineController, sessionController),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('Proceed Anyway (Not Recommended)'),
+            ),
+          ),
+        ],
+      );
+    }
   }
-  
-  String _getQualityLabel(int quality) {
-    if (quality >= 90) return 'Excellent Quality';
-    if (quality >= 75) return 'Good Quality';
-    if (quality >= 50) return 'Acceptable Quality';
-    return 'Low Quality';
+
+  void _proceedToPreSurgery(
+    BaselineController baselineController,
+    SessionController sessionController,
+  ) async {
+    // Baseline is already saved, just navigate to pre-surgery
+    print('[BaselineComplete] ========================================');
+    print('[BaselineComplete] 🚀 PROCEED TO PRE-SURGERY BUTTON PRESSED');
+    print('[BaselineComplete] ========================================');
+    print('[BaselineComplete] Target Route: ${Routes.preSurgery}');
+
+    try {
+      print('[BaselineComplete] 🚀 Attempting navigation to pre-surgery...');
+      Get.offAllNamed(Routes.preSurgery);
+      print('[BaselineComplete] ✅ Navigation successful');
+      print('[BaselineComplete] ========================================');
+    } catch (e, stackTrace) {
+      print('[BaselineComplete] ========================================');
+      print('[BaselineComplete] ❌ NAVIGATION ERROR');
+      print('[BaselineComplete] ========================================');
+      print('[BaselineComplete] Error Type: ${e.runtimeType}');
+      print('[BaselineComplete] Error Message: $e');
+      print('[BaselineComplete] Attempted Route: ${Routes.preSurgery}');
+      print('[BaselineComplete] Stack Trace:');
+      print(stackTrace);
+      print('[BaselineComplete] ========================================');
+
+      Get.snackbar(
+        'Navigation Error',
+        'Failed to navigate to pre-surgery. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
-  
-  String _getQualityDescription(int quality) {
-    if (quality >= 90) return 'Optimal for ML training dataset';
-    if (quality >= 75) return 'Good baseline for comparison';
-    if (quality >= 50) return 'Usable but consider recollection';
-    return 'Recollection recommended';
+
+  void _recollectBaseline(BaselineController baselineController) {
+    Get.back(); // Return to baseline collection page
+    baselineController.restartCollection();
   }
-  
-  Color _getQualityColor(int quality) {
-    if (quality >= 75) return AppColors.success;
-    if (quality >= 50) return AppColors.warning;
-    return AppColors.error;
-  }
-  
-  Color _getQualityBackgroundColor(int quality) {
-    if (quality >= 75) return AppColors.successSurface;
-    if (quality >= 50) return AppColors.warningSurface;
-    return AppColors.errorSurface;
-  }
-  
-  Color _getQualityTextColor(int quality) {
-    if (quality >= 75) return AppColors.successDark;
-    if (quality >= 50) return AppColors.warningDark;
-    return AppColors.errorDark;
+
+  void _showProceedAnywayDialog(
+    BaselineController baselineController,
+    SessionController sessionController,
+  ) {
+    Get.dialog(
+      AlertDialog(
+        title: const Text('Proceed with Low Quality?'),
+        content: const Text(
+          'Baseline quality is below recommended threshold. '
+          'Proceeding may result in less accurate monitoring.\n\n'
+          'Are you sure you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              _proceedToPreSurgery(baselineController, sessionController);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+            ),
+            child: const Text('Proceed Anyway'),
+          ),
+        ],
+      ),
+    );
   }
 }

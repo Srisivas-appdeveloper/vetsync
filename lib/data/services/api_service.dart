@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart' hide Response, FormData, MultipartFile;
 
@@ -185,28 +186,42 @@ class ApiService extends GetxService {
 
   /// Handle Dio errors
   ApiException _handleError(DioException error) {
+    print('[ApiService] ========================================');
+    print('[ApiService] 🔍 ${error.requestOptions.method} ERROR CATEGORIZATION');
+    print('[ApiService] ========================================');
+    print('[ApiService] Request: ${error.requestOptions.method} ${error.requestOptions.uri}');
+
     switch (error.type) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+        print('[ApiService] 📱 FRONTEND ERROR: Network timeout');
+        print('[ApiService] Cause: Request took too long');
         return ApiException(
           message: 'Connection timeout. Please try again.',
           statusCode: 408,
         );
 
       case DioExceptionType.badResponse:
+        print('[ApiService] 🖥️ BACKEND ERROR: Server returned error response');
+        print('[ApiService] Status Code: ${error.response?.statusCode}');
         return _handleResponseError(error.response);
 
       case DioExceptionType.cancel:
+        print('[ApiService] 📱 FRONTEND ERROR: Request cancelled by user');
         return ApiException(message: 'Request cancelled.', statusCode: 0);
 
       case DioExceptionType.connectionError:
+        print('[ApiService] 📱 FRONTEND ERROR: Network connection issue');
+        print('[ApiService] Cause: No internet connection or network unreachable');
         return ApiException(
           message: 'No internet connection. Please check your network.',
           statusCode: 0,
         );
 
       default:
+        print('[ApiService] ⚠️ UNKNOWN ERROR: ${error.type}');
+        print('[ApiService] This might be a frontend validation or unexpected error');
         return ApiException(
           message: 'Something went wrong. Please try again.',
           statusCode: 0,
@@ -223,15 +238,51 @@ class ApiService extends GetxService {
     final statusCode = response.statusCode ?? 0;
     final data = response.data;
 
+    // Log the raw error response for debugging
+    print('[ApiService] ⚠️ Server error response:');
+    print('[ApiService] Status code: $statusCode');
+    print('[ApiService] Response data type: ${data.runtimeType}');
+    print('[ApiService] Response data: $data');
+
     // Try to extract error message from response
     String message = 'An error occurred.';
 
-    if (data is Map<String, dynamic>) {
-      message =
-          data['message'] as String? ??
-          data['error'] as String? ??
-          data['detail'] as String? ??
-          message;
+    try {
+      if (data is Map<String, dynamic>) {
+        // Handle both string and nested object error formats
+        final messageField = data['message'];
+        final errorField = data['error'];
+        final detailField = data['detail'];
+
+        print('[ApiService] Message field type: ${messageField.runtimeType}, value: $messageField');
+        print('[ApiService] Error field type: ${errorField.runtimeType}, value: $errorField');
+        print('[ApiService] Detail field type: ${detailField.runtimeType}, value: $detailField');
+
+        if (messageField is String) {
+          message = messageField;
+        } else if (errorField is String) {
+          message = errorField;
+        } else if (detailField is String) {
+          message = detailField;
+        } else if (errorField is Map<String, dynamic>) {
+          // Handle nested error object: { "error": { "message": "..." } }
+          message = errorField['message']?.toString() ?? message;
+        } else if (messageField is Map<String, dynamic>) {
+          message = messageField['message']?.toString() ?? message;
+        } else {
+          // If we can't extract a specific message, convert the whole data to string
+          message = data.toString();
+        }
+      } else if (data is String) {
+        message = data;
+      } else {
+        message = data.toString();
+      }
+
+      print('[ApiService] Extracted error message: $message');
+    } catch (e) {
+      print('[ApiService] ❌ Error parsing error response: $e');
+      message = 'Server error (could not parse response)';
     }
 
     switch (statusCode) {
@@ -294,29 +345,150 @@ class _AuthInterceptor extends Interceptor {
 class _LoggingInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    print('🌐 REQUEST[${options.method}] => ${options.uri}');
-    if (options.data != null) {
-      print('📤 Data: ${options.data}');
+    print('[ApiService] ========================================');
+    print('[ApiService] 🌐 ${options.method} REQUEST');
+    print('[ApiService] ========================================');
+    print('[ApiService] Method: ${options.method}');
+    print('[ApiService] URL: ${options.uri}');
+
+    // Log headers (excluding sensitive data)
+    if (options.headers.isNotEmpty) {
+      final sanitizedHeaders = Map<String, dynamic>.from(options.headers);
+      if (sanitizedHeaders.containsKey('Authorization')) {
+        final auth = sanitizedHeaders['Authorization'].toString();
+        sanitizedHeaders['Authorization'] = auth.length > 20
+            ? '${auth.substring(0, 20)}...'
+            : auth;
+      }
+      print('[ApiService] Headers:');
+      sanitizedHeaders.forEach((key, value) {
+        print('[ApiService]   $key: $value');
+      });
     }
+
+    // Log query parameters
+    if (options.queryParameters.isNotEmpty) {
+      print('[ApiService] Query Parameters:');
+      options.queryParameters.forEach((key, value) {
+        print('[ApiService]   $key: $value');
+      });
+    }
+
+    // Log request body
+    if (options.data != null) {
+      print('[ApiService] Request Body:');
+      try {
+        if (options.data is FormData) {
+          print('[ApiService]   [FormData - multipart/form-data]');
+          final formData = options.data as FormData;
+          for (var field in formData.fields) {
+            print('[ApiService]   ${field.key}: ${field.value}');
+          }
+          for (var file in formData.files) {
+            print('[ApiService]   ${file.key}: [File: ${file.value.filename}]');
+          }
+        } else if (options.data is Map || options.data is List) {
+          final prettyJson = const JsonEncoder.withIndent('  ').convert(options.data);
+          print('[ApiService]   $prettyJson');
+        } else {
+          print('[ApiService]   ${options.data}');
+        }
+      } catch (e) {
+        print('[ApiService]   [Could not format body: $e]');
+        print('[ApiService]   Raw: ${options.data}');
+      }
+    }
+    print('[ApiService] ========================================');
+
     handler.next(options);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    print(
-      '✅ RESPONSE[${response.statusCode}] => ${response.requestOptions.uri}',
-    );
-    print('📥 Data: ${response.data}');
+    print('[ApiService] ========================================');
+    print('[ApiService] ✅ ${response.requestOptions.method} RESPONSE - ${response.statusCode}');
+    print('[ApiService] ========================================');
+    print('[ApiService] Method: ${response.requestOptions.method}');
+    print('[ApiService] Status Code: ${response.statusCode}');
+    print('[ApiService] URL: ${response.requestOptions.uri}');
+
+    // Log response headers
+    if (response.headers.map.isNotEmpty) {
+      print('[ApiService] Response Headers:');
+      response.headers.map.forEach((key, values) {
+        print('[ApiService]   $key: ${values.join(", ")}');
+      });
+    }
+
+    // Log response body
+    print('[ApiService] Response Body:');
+    try {
+      if (response.data is Map || response.data is List) {
+        final prettyJson = const JsonEncoder.withIndent('  ').convert(response.data);
+        print('[ApiService]   $prettyJson');
+      } else if (response.data is String) {
+        print('[ApiService]   ${response.data}');
+      } else {
+        print('[ApiService]   [${response.data.runtimeType}]: ${response.data}');
+      }
+    } catch (e) {
+      print('[ApiService]   [Could not format response: $e]');
+      print('[ApiService]   Raw: ${response.data}');
+    }
+    print('[ApiService] ========================================');
+
     handler.next(response);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    print('❌ ERROR[${err.response?.statusCode}] => ${err.requestOptions.uri}');
-    print('💥 Message: ${err.message}');
-    if (err.response?.data != null) {
-      print('📥 Error Data: ${err.response?.data}');
+    print('[ApiService] ========================================');
+    print('[ApiService] ❌ ${err.requestOptions.method} ERROR - ${err.response?.statusCode ?? "No Response"}');
+    print('[ApiService] ========================================');
+    print('[ApiService] Method: ${err.requestOptions.method}');
+    print('[ApiService] Error Type: ${err.type}');
+    print('[ApiService] URL: ${err.requestOptions.uri}');
+    print('[ApiService] Status Code: ${err.response?.statusCode}');
+    print('[ApiService] Error Message: ${err.message}');
+
+    // Log request that caused the error
+    if (err.requestOptions.data != null) {
+      print('[ApiService] Failed Request Body:');
+      try {
+        if (err.requestOptions.data is Map || err.requestOptions.data is List) {
+          final prettyJson = const JsonEncoder.withIndent('  ').convert(err.requestOptions.data);
+          print('[ApiService]   $prettyJson');
+        } else {
+          print('[ApiService]   ${err.requestOptions.data}');
+        }
+      } catch (e) {
+        print('[ApiService]   [Could not format: $e]');
+        print('[ApiService]   Raw: ${err.requestOptions.data}');
+      }
     }
+
+    // Log error response
+    if (err.response?.data != null) {
+      print('[ApiService] Error Response Body:');
+      try {
+        if (err.response!.data is Map || err.response!.data is List) {
+          final prettyJson = const JsonEncoder.withIndent('  ').convert(err.response!.data);
+          print('[ApiService]   $prettyJson');
+        } else {
+          print('[ApiService]   ${err.response!.data}');
+        }
+      } catch (e) {
+        print('[ApiService]   [Could not format: $e]');
+        print('[ApiService]   Raw: ${err.response!.data}');
+      }
+    }
+
+    // Log stack trace
+    print('[ApiService] Stack Trace:');
+    print('[ApiService]   ${err.stackTrace}');
+
+    print('[ApiService] ========================================');
+
     handler.next(err);
   }
 }

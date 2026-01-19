@@ -267,6 +267,21 @@ class $LocalSessionsTable extends LocalSessions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _verySickMeta = const VerificationMeta(
+    'verySick',
+  );
+  @override
+  late final GeneratedColumn<bool> verySick = GeneratedColumn<bool>(
+    'very_sick',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("very_sick" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _initialNotesMeta = const VerificationMeta(
     'initialNotes',
   );
@@ -339,6 +354,7 @@ class $LocalSessionsTable extends LocalSessions
     collarPhotoPath,
     initialPosition,
     initialAnxiety,
+    verySick,
     initialNotes,
     syncStatus,
     createdAt,
@@ -552,6 +568,12 @@ class $LocalSessionsTable extends LocalSessions
         ),
       );
     }
+    if (data.containsKey('very_sick')) {
+      context.handle(
+        _verySickMeta,
+        verySick.isAcceptableOrUnknown(data['very_sick']!, _verySickMeta),
+      );
+    }
     if (data.containsKey('initial_notes')) {
       context.handle(
         _initialNotesMeta,
@@ -680,6 +702,10 @@ class $LocalSessionsTable extends LocalSessions
         DriftSqlType.string,
         data['${effectivePrefix}initial_anxiety'],
       ),
+      verySick: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}very_sick'],
+      )!,
       initialNotes: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}initial_notes'],
@@ -729,6 +755,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
   final String? collarPhotoPath;
   final String? initialPosition;
   final String? initialAnxiety;
+  final bool verySick;
   final String? initialNotes;
   final String syncStatus;
   final DateTime createdAt;
@@ -757,6 +784,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
     this.collarPhotoPath,
     this.initialPosition,
     this.initialAnxiety,
+    required this.verySick,
     this.initialNotes,
     required this.syncStatus,
     required this.createdAt,
@@ -816,6 +844,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
     if (!nullToAbsent || initialAnxiety != null) {
       map['initial_anxiety'] = Variable<String>(initialAnxiety);
     }
+    map['very_sick'] = Variable<bool>(verySick);
     if (!nullToAbsent || initialNotes != null) {
       map['initial_notes'] = Variable<String>(initialNotes);
     }
@@ -878,6 +907,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
       initialAnxiety: initialAnxiety == null && nullToAbsent
           ? const Value.absent()
           : Value(initialAnxiety),
+      verySick: Value(verySick),
       initialNotes: initialNotes == null && nullToAbsent
           ? const Value.absent()
           : Value(initialNotes),
@@ -924,6 +954,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
       collarPhotoPath: serializer.fromJson<String?>(json['collarPhotoPath']),
       initialPosition: serializer.fromJson<String?>(json['initialPosition']),
       initialAnxiety: serializer.fromJson<String?>(json['initialAnxiety']),
+      verySick: serializer.fromJson<bool>(json['verySick']),
       initialNotes: serializer.fromJson<String?>(json['initialNotes']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
@@ -959,6 +990,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
       'collarPhotoPath': serializer.toJson<String?>(collarPhotoPath),
       'initialPosition': serializer.toJson<String?>(initialPosition),
       'initialAnxiety': serializer.toJson<String?>(initialAnxiety),
+      'verySick': serializer.toJson<bool>(verySick),
       'initialNotes': serializer.toJson<String?>(initialNotes),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'createdAt': serializer.toJson<DateTime>(createdAt),
@@ -990,6 +1022,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
     Value<String?> collarPhotoPath = const Value.absent(),
     Value<String?> initialPosition = const Value.absent(),
     Value<String?> initialAnxiety = const Value.absent(),
+    bool? verySick,
     Value<String?> initialNotes = const Value.absent(),
     String? syncStatus,
     DateTime? createdAt,
@@ -1040,6 +1073,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
     initialAnxiety: initialAnxiety.present
         ? initialAnxiety.value
         : this.initialAnxiety,
+    verySick: verySick ?? this.verySick,
     initialNotes: initialNotes.present ? initialNotes.value : this.initialNotes,
     syncStatus: syncStatus ?? this.syncStatus,
     createdAt: createdAt ?? this.createdAt,
@@ -1102,6 +1136,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
       initialAnxiety: data.initialAnxiety.present
           ? data.initialAnxiety.value
           : this.initialAnxiety,
+      verySick: data.verySick.present ? data.verySick.value : this.verySick,
       initialNotes: data.initialNotes.present
           ? data.initialNotes.value
           : this.initialNotes,
@@ -1139,6 +1174,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
           ..write('collarPhotoPath: $collarPhotoPath, ')
           ..write('initialPosition: $initialPosition, ')
           ..write('initialAnxiety: $initialAnxiety, ')
+          ..write('verySick: $verySick, ')
           ..write('initialNotes: $initialNotes, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('createdAt: $createdAt, ')
@@ -1172,6 +1208,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
     collarPhotoPath,
     initialPosition,
     initialAnxiety,
+    verySick,
     initialNotes,
     syncStatus,
     createdAt,
@@ -1204,6 +1241,7 @@ class LocalSession extends DataClass implements Insertable<LocalSession> {
           other.collarPhotoPath == this.collarPhotoPath &&
           other.initialPosition == this.initialPosition &&
           other.initialAnxiety == this.initialAnxiety &&
+          other.verySick == this.verySick &&
           other.initialNotes == this.initialNotes &&
           other.syncStatus == this.syncStatus &&
           other.createdAt == this.createdAt &&
@@ -1234,6 +1272,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
   final Value<String?> collarPhotoPath;
   final Value<String?> initialPosition;
   final Value<String?> initialAnxiety;
+  final Value<bool> verySick;
   final Value<String?> initialNotes;
   final Value<String> syncStatus;
   final Value<DateTime> createdAt;
@@ -1263,6 +1302,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
     this.collarPhotoPath = const Value.absent(),
     this.initialPosition = const Value.absent(),
     this.initialAnxiety = const Value.absent(),
+    this.verySick = const Value.absent(),
     this.initialNotes = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1293,6 +1333,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
     this.collarPhotoPath = const Value.absent(),
     this.initialPosition = const Value.absent(),
     this.initialAnxiety = const Value.absent(),
+    this.verySick = const Value.absent(),
     this.initialNotes = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1330,6 +1371,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
     Expression<String>? collarPhotoPath,
     Expression<String>? initialPosition,
     Expression<String>? initialAnxiety,
+    Expression<bool>? verySick,
     Expression<String>? initialNotes,
     Expression<String>? syncStatus,
     Expression<DateTime>? createdAt,
@@ -1362,6 +1404,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
       if (collarPhotoPath != null) 'collar_photo_path': collarPhotoPath,
       if (initialPosition != null) 'initial_position': initialPosition,
       if (initialAnxiety != null) 'initial_anxiety': initialAnxiety,
+      if (verySick != null) 'very_sick': verySick,
       if (initialNotes != null) 'initial_notes': initialNotes,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (createdAt != null) 'created_at': createdAt,
@@ -1394,6 +1437,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
     Value<String?>? collarPhotoPath,
     Value<String?>? initialPosition,
     Value<String?>? initialAnxiety,
+    Value<bool>? verySick,
     Value<String?>? initialNotes,
     Value<String>? syncStatus,
     Value<DateTime>? createdAt,
@@ -1425,6 +1469,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
       collarPhotoPath: collarPhotoPath ?? this.collarPhotoPath,
       initialPosition: initialPosition ?? this.initialPosition,
       initialAnxiety: initialAnxiety ?? this.initialAnxiety,
+      verySick: verySick ?? this.verySick,
       initialNotes: initialNotes ?? this.initialNotes,
       syncStatus: syncStatus ?? this.syncStatus,
       createdAt: createdAt ?? this.createdAt,
@@ -1509,6 +1554,9 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
     if (initialAnxiety.present) {
       map['initial_anxiety'] = Variable<String>(initialAnxiety.value);
     }
+    if (verySick.present) {
+      map['very_sick'] = Variable<bool>(verySick.value);
+    }
     if (initialNotes.present) {
       map['initial_notes'] = Variable<String>(initialNotes.value);
     }
@@ -1553,6 +1601,7 @@ class LocalSessionsCompanion extends UpdateCompanion<LocalSession> {
           ..write('collarPhotoPath: $collarPhotoPath, ')
           ..write('initialPosition: $initialPosition, ')
           ..write('initialAnxiety: $initialAnxiety, ')
+          ..write('verySick: $verySick, ')
           ..write('initialNotes: $initialNotes, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('createdAt: $createdAt, ')
@@ -4375,6 +4424,7 @@ typedef $$LocalSessionsTableCreateCompanionBuilder =
       Value<String?> collarPhotoPath,
       Value<String?> initialPosition,
       Value<String?> initialAnxiety,
+      Value<bool> verySick,
       Value<String?> initialNotes,
       Value<String> syncStatus,
       Value<DateTime> createdAt,
@@ -4406,6 +4456,7 @@ typedef $$LocalSessionsTableUpdateCompanionBuilder =
       Value<String?> collarPhotoPath,
       Value<String?> initialPosition,
       Value<String?> initialAnxiety,
+      Value<bool> verySick,
       Value<String?> initialNotes,
       Value<String> syncStatus,
       Value<DateTime> createdAt,
@@ -4534,6 +4585,11 @@ class $$LocalSessionsTableFilterComposer
 
   ColumnFilters<String> get initialAnxiety => $composableBuilder(
     column: $table.initialAnxiety,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get verySick => $composableBuilder(
+    column: $table.verySick,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4682,6 +4738,11 @@ class $$LocalSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get verySick => $composableBuilder(
+    column: $table.verySick,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get initialNotes => $composableBuilder(
     column: $table.initialNotes,
     builder: (column) => ColumnOrderings(column),
@@ -4813,6 +4874,9 @@ class $$LocalSessionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get verySick =>
+      $composableBuilder(column: $table.verySick, builder: (column) => column);
+
   GeneratedColumn<String> get initialNotes => $composableBuilder(
     column: $table.initialNotes,
     builder: (column) => column,
@@ -4884,6 +4948,7 @@ class $$LocalSessionsTableTableManager
                 Value<String?> collarPhotoPath = const Value.absent(),
                 Value<String?> initialPosition = const Value.absent(),
                 Value<String?> initialAnxiety = const Value.absent(),
+                Value<bool> verySick = const Value.absent(),
                 Value<String?> initialNotes = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -4913,6 +4978,7 @@ class $$LocalSessionsTableTableManager
                 collarPhotoPath: collarPhotoPath,
                 initialPosition: initialPosition,
                 initialAnxiety: initialAnxiety,
+                verySick: verySick,
                 initialNotes: initialNotes,
                 syncStatus: syncStatus,
                 createdAt: createdAt,
@@ -4944,6 +5010,7 @@ class $$LocalSessionsTableTableManager
                 Value<String?> collarPhotoPath = const Value.absent(),
                 Value<String?> initialPosition = const Value.absent(),
                 Value<String?> initialAnxiety = const Value.absent(),
+                Value<bool> verySick = const Value.absent(),
                 Value<String?> initialNotes = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -4973,6 +5040,7 @@ class $$LocalSessionsTableTableManager
                 collarPhotoPath: collarPhotoPath,
                 initialPosition: initialPosition,
                 initialAnxiety: initialAnxiety,
+                verySick: verySick,
                 initialNotes: initialNotes,
                 syncStatus: syncStatus,
                 createdAt: createdAt,

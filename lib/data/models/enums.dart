@@ -78,8 +78,7 @@ enum SessionPhase {
 enum PetPosition {
   standing('standing', 'Standing'),
   sitting('sitting', 'Sitting'),
-  laying('laying', 'Laying'),
-  verySick('very_sick', 'Very Sick');
+  laying('laying', 'Laying');
 
   final String value;
   final String displayName;
@@ -319,9 +318,14 @@ enum CollarStatus {
   const CollarStatus(this.value, this.displayName);
 
   static CollarStatus fromString(String value) {
+    final normalized = value.toLowerCase();
+    // Map 'active' to 'available' for API compatibility
+    if (normalized == 'active') {
+      return CollarStatus.available;
+    }
     return CollarStatus.values.firstWhere(
-      (e) => e.value == value.toLowerCase(),
-      orElse: () => CollarStatus.offline,
+      (e) => e.value == normalized,
+      orElse: () => CollarStatus.available,
     );
   }
 }

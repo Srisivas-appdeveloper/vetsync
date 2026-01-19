@@ -1,5 +1,6 @@
 // lib/data/models/collar_packet_validated.dart
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import '../../utils/crc_utils.dart';
 
 /// Enhanced collar packet with CRC validation and mode-aware parsing
@@ -83,7 +84,24 @@ class CollarPacket {
   bool get isHighResActive => (statusFlags & 0x10) != 0;
 
   // Computed values
-  double get temperatureCelsius => 394.67 - (temperatureRaw * 0.5003);
+  /// Convert NPM1300 die temperature using datasheet formula
+  /// Formula: T(°C) = RAW * 0.25
+  /// Valid range: -40°C to +85°C (NPM1300 operating range)
+  double get temperatureCelsius {
+    final tempC = temperatureRaw * 0.25;
+
+    // Log extremely invalid values for debugging
+    if (tempC < -100 || tempC > 150) {
+      // debugPrint('[TEMP] ⚠️ Extremely invalid temperature detected: ${tempC.toStringAsFixed(1)}°C (raw: $temperatureRaw)');
+    }
+
+    // Return NaN for out-of-range values
+    if (tempC < -40.0 || tempC > 85.0) {
+      return double.nan;
+    }
+
+    return tempC;
+  }
 
   double get batteryVoltage => batteryMv / 1000.0;
 
@@ -93,8 +111,13 @@ class CollarPacket {
       pressures.first >= 1000 &&
       pressures.first <= 60000;
   bool get isBatteryValid => batteryMv >= 3000 && batteryMv <= 4500;
-  bool get isTemperatureValid =>
-      temperatureRaw >= -1000 && temperatureRaw <= 5000;
+
+  /// Temperature is valid if within NPM1300 operating range (-40°C to +85°C)
+  /// Raw range: -160 to +340 (since T = RAW * 0.25)
+  bool get isTemperatureValid {
+    final tempC = temperatureRaw * 0.25;
+    return tempC >= -40.0 && tempC <= 85.0;
+  }
 
   bool get isValid =>
       crcValid && isPressureValid && isBatteryValid && isTemperatureValid;

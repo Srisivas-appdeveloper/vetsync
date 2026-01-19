@@ -334,9 +334,14 @@ class CollarScanController extends GetxController {
       // Verify collar in backend
       Collar? backendCollar;
       try {
+        print('[CollarScan] 🔍 Fetching collar from backend: ${collar.collarId}');
         backendCollar = await _collarRepo.getCollar(collar.collarId);
-      } catch (e) {
+        print('[CollarScan] ✅ Backend collar fetched: ${backendCollar.id}');
+      } catch (e, stackTrace) {
         // Collar not registered in backend - that's okay for now
+        print('[CollarScan] ⚠️ Failed to fetch collar from backend: $e');
+        print('[CollarScan] Stack trace: $stackTrace');
+        print('[CollarScan] Creating local collar with BLE ID: ${collar.collarId}');
         // Create a local collar object
         backendCollar = Collar(
           id: collar.collarId,
@@ -400,7 +405,35 @@ class CollarScanController extends GetxController {
       _sessionController.currentCollar.value = backendCollar;
 
       // Navigate to session setup
-      Get.toNamed(Routes.sessionSetup);
+      print('[CollarScan] ========================================');
+      print('[CollarScan] 🚀 Attempting navigation to session setup...');
+      print('[CollarScan] Collar ID: ${collar.collarId}');
+      print('[CollarScan] Target Route: ${Routes.sessionSetup}');
+      try {
+        Get.toNamed(Routes.sessionSetup);
+        print('[CollarScan] ✅ Navigation successful');
+        print('[CollarScan] ========================================');
+      } catch (navError, navStackTrace) {
+        print('[CollarScan] ========================================');
+        print('[CollarScan] ❌ NAVIGATION ERROR');
+        print('[CollarScan] ========================================');
+        print('[CollarScan] Error Type: ${navError.runtimeType}');
+        print('[CollarScan] Error Message: $navError');
+        print('[CollarScan] Attempted Route: ${Routes.sessionSetup}');
+        print('[CollarScan] Collar ID: ${collar.collarId}');
+        print('[CollarScan] Stack Trace:');
+        print(navStackTrace);
+        print('[CollarScan] ========================================');
+
+        Get.snackbar(
+          'Navigation Error',
+          'Connected to collar but failed to navigate to session setup.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
+          duration: const Duration(seconds: 5),
+        );
+      }
     } catch (e) {
       connectionError.value = 'Failed to connect: ${e.toString()}';
       await _bleService.disconnect();

@@ -106,7 +106,9 @@ class CollarStreamParser {
         if (responseLen > 0) {
           if (_rxBuffer.length < responseLen) break; // Wait for more data
 
-          final responseBytes = Uint8List.fromList(_rxBuffer.sublist(0, responseLen));
+          final responseBytes = Uint8List.fromList(
+            _rxBuffer.sublist(0, responseLen),
+          );
           _rxBuffer.removeRange(0, responseLen);
 
           final response = CollarResponse.fromBytes(responseBytes);
@@ -245,7 +247,9 @@ class CollarStreamParser {
         packets.add(packet);
       }
 
-      debugPrint('[StreamParser] ✅ Parsed array frame (format 1): $count packets');
+      debugPrint(
+        '[StreamParser] ✅ Parsed array frame (format 1): $count packets',
+      );
       return packets;
     } catch (e) {
       debugPrint('[StreamParser] Error extracting array format 1: $e');
@@ -287,7 +291,9 @@ class CollarStreamParser {
         packets.add(packet);
       }
 
-      debugPrint('[StreamParser] ✅ Parsed array frame (format 2): $count packets');
+      debugPrint(
+        '[StreamParser] ✅ Parsed array frame (format 2): $count packets',
+      );
       return packets;
     } catch (e) {
       debugPrint('[StreamParser] Error extracting array format 2: $e');
@@ -298,27 +304,27 @@ class CollarStreamParser {
   /// Check if packet type is a response (not a data packet)
   bool _isResponseType(int ptype) {
     return ptype == 0x11 || // MODE_SWITCH
-           ptype == 0xAA || // ACK
-           ptype == 0x55 || // NAK
-           ptype == 0xA0 || // DEVICE_INFO
-           ptype == 0xB1;   // BATTERY (could also be data packet, check length)
+        ptype == 0xAA || // ACK
+        ptype == 0x55 || // NAK
+        ptype == 0xA0 || // DEVICE_INFO
+        ptype == 0xB1; // BATTERY (could also be data packet, check length)
   }
 
   /// Get expected length of response packet
   int _getExpectedResponseLength(int ptype) {
     switch (ptype) {
-      case 0x11: return 4;   // MODE_SWITCH
-      case 0xAA: return 1;   // ACK
-      case 0x55: return 1;   // NAK
-      case 0xA0: return 22;  // DEVICE_INFO
+      case 0x11:
+        return 4; // MODE_SWITCH
+      case 0xAA:
+        return 1; // ACK
+      case 0x55:
+        return 1; // NAK
+      case 0xA0:
+        return 22; // DEVICE_INFO
       case 0xB1:
-        // Battery response is 3-10 bytes, data packet is 27+ bytes
-        // Check buffer length to distinguish
-        if (_rxBuffer.length >= 27) {
-          return 0; // Likely a data packet, not a response
-        }
-        return 4; // Battery response
-      default: return 0;
+        return 12; // Battery response (matches Python PACKET_TYPE_BATTERY)
+      default:
+        return 0;
     }
   }
 }

@@ -22,22 +22,23 @@ class SessionSetupPage extends StatefulWidget {
 class _SessionSetupPageState extends State<SessionSetupPage> {
   final SessionController _sessionController = Get.find<SessionController>();
   final ImagePicker _picker = ImagePicker();
-  
+
   // Form state
   final formKey = GlobalKey<FormState>();
   final notesController = TextEditingController();
-  
+
   final Rx<PetPosition> position = PetPosition.standing.obs;
   final Rx<AnxietyLevel> anxiety = AnxietyLevel.calm.obs;
+  final RxBool verySick = false.obs;
   final Rx<File?> collarPhoto = Rx<File?>(null);
   final RxBool isLoading = false.obs;
-  
+
   @override
   void dispose() {
     notesController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _takeCollarPhoto() async {
     try {
       final XFile? image = await _picker.pickImage(
@@ -46,7 +47,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
         maxHeight: 1920,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         collarPhoto.value = File(image.path);
       }
@@ -54,90 +55,120 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
       Get.snackbar('Error', 'Failed to take photo');
     }
   }
-  
+
   Future<void> _startSession() async {
     if (!formKey.currentState!.validate()) return;
-    
+
     isLoading.value = true;
-    
+
     try {
+      print('[SessionSetup] 🚀 Starting session...');
+      print('[SessionSetup] Current Collar Value: ${_sessionController.currentCollar.value}');
+      print('[SessionSetup] Current Collar ID: ${_sessionController.currentCollar.value?.id}');
+      print('[SessionSetup] Current Collar Serial: ${_sessionController.currentCollar.value?.serialNumber}');
+      print('[SessionSetup] Current Animal Value: ${_sessionController.currentAnimal.value}');
+      print('[SessionSetup] Current Animal ID: ${_sessionController.currentAnimal.value?.id}');
+
       final success = await _sessionController.initializeSession(
         animal: _sessionController.currentAnimal.value!,
         collar: _sessionController.currentCollar.value!,
         collarPhotoPath: collarPhoto.value?.path,
         position: position.value,
         anxiety: anxiety.value,
+        verySick: verySick.value,
         notes: notesController.text.isEmpty ? null : notesController.text,
       );
-      
+
       if (success) {
+        print('[SessionSetup] ✅ Session initialized, navigating to baseline collection');
         Get.offNamed(Routes.baselineCollection);
+      } else {
+        print('[SessionSetup] ❌ Session initialization returned false');
+        Get.snackbar(
+          'Error',
+          'Failed to start session. Please check connection and try again.',
+          duration: const Duration(seconds: 5),
+          backgroundColor: Colors.red[100],
+          colorText: Colors.red[900],
+        );
       }
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to start session');
+    } catch (e, stack) {
+      print('[SessionSetup] ❌ ERROR starting session: $e');
+      print('[SessionSetup] Stack trace: $stack');
+      Get.snackbar(
+        'Error',
+        'Failed to start session: ${e.toString()}',
+        duration: const Duration(seconds: 5),
+        backgroundColor: Colors.red[100],
+        colorText: Colors.red[900],
+      );
     } finally {
       isLoading.value = false;
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Session Setup'),
-      ),
-      body: Obx(() => LoadingOverlay(
-        isLoading: isLoading.value,
-        message: 'Starting session...',
-        child: SingleChildScrollView(
-          padding: AppSpacing.screenPadding,
-          child: Form(
-            key: formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Pet and collar summary
-                _buildSummaryCard(),
-                const SizedBox(height: 24),
-                
-                // Collar photo
-                _buildCollarPhoto(),
-                const SizedBox(height: 24),
-                
-                // Position selection
-                _buildPositionSelection(),
-                const SizedBox(height: 24),
-                
-                // Anxiety level
-                _buildAnxietySelection(),
-                const SizedBox(height: 24),
-                
-                // Notes
-                _buildNotesField(),
-                const SizedBox(height: 32),
-                
-                // Start button
-                ElevatedButton(
-                  onPressed: _startSession,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+      appBar: AppBar(title: const Text('Session Setup')),
+      body: Obx(
+        () => LoadingOverlay(
+          isLoading: isLoading.value,
+          message: 'Starting session...',
+          child: SingleChildScrollView(
+            padding: AppSpacing.screenPadding,
+            child: Form(
+              key: formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Pet and collar summary
+                  _buildSummaryCard(),
+                  const SizedBox(height: 24),
+
+                  // Collar photo
+                  _buildCollarPhoto(),
+                  const SizedBox(height: 24),
+
+                  // Position selection
+                  _buildPositionSelection(),
+                  const SizedBox(height: 24),
+
+                  // Very Sick checkbox
+                  _buildVerySickCheckbox(),
+                  const SizedBox(height: 24),
+
+                  // Anxiety level
+                  _buildAnxietySelection(),
+                  const SizedBox(height: 24),
+
+                  // Notes
+                  _buildNotesField(),
+                  const SizedBox(height: 32),
+
+                  // Start button
+                  ElevatedButton(
+                    onPressed: _startSession,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: const Text('Start Session'),
                   ),
-                  child: const Text('Start Session'),
-                ),
-                const SizedBox(height: 16),
-              ],
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
         ),
-      )),
+      ),
     );
   }
-  
+
   Widget _buildSummaryCard() {
     final animal = _sessionController.currentAnimal.value;
     final collar = _sessionController.currentCollar.value;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -155,8 +186,8 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                 Row(
                   children: [
                     Icon(
-                      animal?.species == Species.dog 
-                          ? Icons.pets 
+                      animal?.species == Species.dog
+                          ? Icons.pets
                           : Icons.cruelty_free,
                       color: AppColors.primary,
                       size: 20,
@@ -173,13 +204,9 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
               ],
             ),
           ),
-          
-          Container(
-            width: 1,
-            height: 40,
-            color: AppColors.border,
-          ),
-          
+
+          Container(width: 1, height: 40, color: AppColors.border),
+
           // Collar info
           Expanded(
             child: Padding(
@@ -189,7 +216,11 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.bluetooth, color: AppColors.success, size: 20),
+                      const Icon(
+                        Icons.bluetooth,
+                        color: AppColors.success,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         collar?.serialNumber ?? '-',
@@ -202,14 +233,14 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                     children: [
                       Icon(
                         Icons.battery_std,
-                        color: AppColors.getBatteryColor(collar?.batteryPercent ?? 0),
+                        color: AppColors.getBatteryColor(
+                          _sessionController.batteryPercent.value,
+                        ),
                         size: 16,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        collar?.batteryPercent != null
-                          ? '${collar!.batteryPercent}%'
-                          : '--',
+                        '${_sessionController.batteryPercent.value}%',
                         style: AppTypography.bodySmall,
                       ),
                     ],
@@ -222,7 +253,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
       ),
     );
   }
-  
+
   Widget _buildCollarPhoto() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +265,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
           style: AppTypography.caption,
         ),
         const SizedBox(height: 12),
-        
+
         Obx(() {
           if (collarPhoto.value != null) {
             return Stack(
@@ -262,7 +293,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
               ],
             );
           }
-          
+
           return OutlinedButton.icon(
             onPressed: _takeCollarPhoto,
             icon: const Icon(Icons.camera_alt),
@@ -275,67 +306,88 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
       ],
     );
   }
-  
+
   Widget _buildPositionSelection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Initial Position', style: AppTypography.labelMedium),
         const SizedBox(height: 12),
-        
-        Obx(() => Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: PetPosition.values.map((pos) {
-            final isSelected = position.value == pos;
-            return ChoiceChip(
-              label: Text(_getPositionLabel(pos)),
-              selected: isSelected,
-              onSelected: (_) => position.value = pos,
-              avatar: Icon(
-                _getPositionIcon(pos),
-                size: 18,
-                color: isSelected ? Colors.white : AppColors.textSecondary,
-              ),
-            );
-          }).toList(),
-        )),
+
+        Obx(
+          () => Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: PetPosition.values.map((pos) {
+              final isSelected = position.value == pos;
+              return ChoiceChip(
+                label: Text(_getPositionLabel(pos)),
+                selected: isSelected,
+                onSelected: (_) => position.value = pos,
+                avatar: Icon(
+                  _getPositionIcon(pos),
+                  size: 18,
+                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
       ],
     );
   }
-  
+
+  Widget _buildVerySickCheckbox() {
+    return Obx(
+      () => CheckboxListTile(
+        value: verySick.value,
+        onChanged: (value) => verySick.value = value ?? false,
+        title: Text('Very Sick', style: AppTypography.labelMedium),
+        subtitle: Text(
+          'Check if the animal is in critical condition',
+          style: AppTypography.caption,
+        ),
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+
   Widget _buildAnxietySelection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Anxiety Level', style: AppTypography.labelMedium),
         const SizedBox(height: 12),
-        
-        Obx(() => Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: AnxietyLevel.values.map((level) {
-            final isSelected = anxiety.value == level;
-            return ChoiceChip(
-              label: Text(_getAnxietyLabel(level)),
-              selected: isSelected,
-              onSelected: (_) => anxiety.value = level,
-              backgroundColor: _getAnxietyColor(level).withOpacity(0.1),
-              selectedColor: _getAnxietyColor(level),
-            );
-          }).toList(),
-        )),
+
+        Obx(
+          () => Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: AnxietyLevel.values.map((level) {
+              final isSelected = anxiety.value == level;
+              return ChoiceChip(
+                label: Text(_getAnxietyLabel(level)),
+                selected: isSelected,
+                onSelected: (_) => anxiety.value = level,
+                backgroundColor: _getAnxietyColor(level).withOpacity(0.1),
+                selectedColor: _getAnxietyColor(level),
+              );
+            }).toList(),
+          ),
+        ),
       ],
     );
   }
-  
+
   Widget _buildNotesField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Initial Notes (optional)', style: AppTypography.labelMedium),
         const SizedBox(height: 12),
-        
+
         TextFormField(
           controller: notesController,
           maxLines: 3,
@@ -347,7 +399,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
       ],
     );
   }
-  
+
   String _getPositionLabel(PetPosition pos) {
     switch (pos) {
       case PetPosition.standing:
@@ -356,11 +408,9 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
         return 'Sitting';
       case PetPosition.laying:
         return 'Laying';
-      case PetPosition.verySick:
-        return 'Very Sick';
     }
   }
-  
+
   IconData _getPositionIcon(PetPosition pos) {
     switch (pos) {
       case PetPosition.standing:
@@ -369,11 +419,9 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
         return Icons.chair;
       case PetPosition.laying:
         return Icons.airline_seat_flat;
-      case PetPosition.verySick:
-        return Icons.healing;
     }
   }
-  
+
   String _getAnxietyLabel(AnxietyLevel level) {
     switch (level) {
       case AnxietyLevel.calm:
@@ -386,7 +434,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
         return 'Severe';
     }
   }
-  
+
   Color _getAnxietyColor(AnxietyLevel level) {
     switch (level) {
       case AnxietyLevel.calm:

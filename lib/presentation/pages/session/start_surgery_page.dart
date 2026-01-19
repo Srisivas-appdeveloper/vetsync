@@ -63,6 +63,7 @@ class _StartSurgeryPageState extends State<StartSurgeryPage> {
     isLoading.value = true;
 
     try {
+      print('[StartSurgery] 🚀 Starting surgery with type: $surgeryType');
       final success = await _sessionController.startSurgery(
         surgeryType: surgeryType,
         surgeryReason:
@@ -73,10 +74,28 @@ class _StartSurgeryPageState extends State<StartSurgeryPage> {
       );
 
       if (success) {
+        print('[StartSurgery] ✅ Surgery started, navigating to surgery page');
         Get.offNamed(Routes.surgery);
+      } else {
+        print('[StartSurgery] ❌ Surgery start returned false');
+        Get.snackbar(
+          'Error',
+          'Failed to start surgery. Check the console for details.',
+          duration: const Duration(seconds: 5),
+          backgroundColor: Colors.red[100],
+          colorText: Colors.red[900],
+        );
       }
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to start surgery');
+    } catch (e, stack) {
+      print('[StartSurgery] ❌ ERROR starting surgery: $e');
+      print('[StartSurgery] Stack trace: $stack');
+      Get.snackbar(
+        'Error',
+        'Failed to start surgery: ${e.toString()}',
+        duration: const Duration(seconds: 5),
+        backgroundColor: Colors.red[100],
+        colorText: Colors.red[900],
+      );
     } finally {
       isLoading.value = false;
     }

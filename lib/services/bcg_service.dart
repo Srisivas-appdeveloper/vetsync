@@ -41,10 +41,17 @@ class BcgService extends ChangeNotifier {
   int get latestTemperatureRaw => _latestTemperatureRaw;
 
   /// Get temperature in Celsius (NPM1300 die temperature)
+  /// Formula: T(°C) = RAW * 0.25 (standardized across codebase)
+  /// Valid range: -40°C to +85°C (NPM1300 operating range)
   double get temperatureCelsius {
-    // NPM1300 die temperature formula (from datasheet)
-    // Typical calibration: 394.67 - raw * 0.5003
-    return 394.67 - (_latestTemperatureRaw * 0.5003);
+    final tempC = _latestTemperatureRaw * 0.25;
+
+    // Return NaN for out-of-range values
+    if (tempC < -40.0 || tempC > 85.0) {
+      return double.nan;
+    }
+
+    return tempC;
   }
 
   /// Get current mode
@@ -82,13 +89,13 @@ class BcgService extends ChangeNotifier {
     final elapsed = DateTime.now().difference(_rateCheckStartTime!);
     if (elapsed.inSeconds >= 10 && elapsed.inSeconds < 11) {
       final actualSampleRate = _totalSamplesReceived / elapsed.inSeconds;
-      debugPrint(
-        '[BCG] 📊 Sample Rate Check: '
-        '${actualSampleRate.toStringAsFixed(1)} Hz '
-        '(${_totalSamplesReceived} samples in ${elapsed.inSeconds}s, '
-        '${_totalPackets} packets, '
-        '${(samplesInPacket)} samples/packet)',
-      );
+      // debugPrint(
+      //   '[BCG] 📊 Sample Rate Check: '
+      //   '${actualSampleRate.toStringAsFixed(1)} Hz '
+      //   '(${_totalSamplesReceived} samples in ${elapsed.inSeconds}s, '
+      //   '${_totalPackets} packets, '
+      //   '${(samplesInPacket)} samples/packet)',
+      // );
     }
 
     // Store temperature (updated on every packet)

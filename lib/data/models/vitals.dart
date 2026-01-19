@@ -9,12 +9,28 @@ class Vitals {
   final int signalQuality;
   final DateTime timestamp;
 
+  // Confidence scores for gating display
+  final double? hrConfidence;
+  final double? rrConfidence;
+
+  // Breed-specific range context (optional, for enhanced gating)
+  final int? minHR;
+  final int? maxHR;
+  final int? minRR;
+  final int? maxRR;
+
   Vitals({
     required this.heartRateBpm,
     required this.respiratoryRateBpm,
     required this.temperatureC,
     required this.signalQuality,
     required this.timestamp,
+    this.hrConfidence,
+    this.rrConfidence,
+    this.minHR,
+    this.maxHR,
+    this.minRR,
+    this.maxRR,
   });
 
   /// Check if vitals are valid
@@ -25,6 +41,96 @@ class Vitals {
         respiratoryRateBpm < 80 &&
         temperatureC > 35 &&
         temperatureC < 42;
+  }
+
+  // Confidence-based display gating thresholds
+  // Note: These match the BCG algorithm's validation thresholds for real-world reliability
+  static const double _hrConfidenceThreshold = 0.3; // 30% (matches BCG algorithm)
+  static const double _rrConfidenceThreshold = 0.3; // 30% (matches BCG algorithm)
+  static const int _signalStabilityThreshold = 30; // 30% (minimum usable signal)
+
+  /// Display HR only when confidence is high enough
+  /// Returns null if confidence too low or value out of breed range
+  int? get displayHR {
+    // Check confidence threshold
+    if (hrConfidence != null && hrConfidence! < _hrConfidenceThreshold) {
+      return null; // Confidence too low
+    }
+
+    // Check signal stability
+    if (signalQuality < _signalStabilityThreshold) {
+      return null; // Signal unstable
+    }
+
+    // Check if value is reasonable (basic plausibility)
+    if (heartRateBpm <= 0 || heartRateBpm > 300) {
+      return null; // Invalid value
+    }
+
+    // Check breed-specific range if provided
+    if (minHR != null && maxHR != null) {
+      // Allow slight tolerance (+/- 20%) outside breed range
+      final toleranceMargin = ((maxHR! - minHR!) * 0.2).round();
+      final lowerBound = minHR! - toleranceMargin;
+      final upperBound = maxHR! + toleranceMargin;
+
+      if (heartRateBpm < lowerBound || heartRateBpm > upperBound) {
+        return null; // Outside plausible range for breed
+      }
+    }
+
+    return heartRateBpm;
+  }
+
+  /// Display RR only when confidence is high enough
+  /// Returns null if confidence too low or value out of breed range
+  int? get displayRR {
+    // Check confidence threshold
+    if (rrConfidence != null && rrConfidence! < _rrConfidenceThreshold) {
+      return null; // Confidence too low
+    }
+
+    // Check signal stability
+    if (signalQuality < _signalStabilityThreshold) {
+      return null; // Signal unstable
+    }
+
+    // Check if value is reasonable (basic plausibility)
+    if (respiratoryRateBpm <= 0 || respiratoryRateBpm > 80) {
+      return null; // Invalid value
+    }
+
+    // Check breed-specific range if provided
+    if (minRR != null && maxRR != null) {
+      // Allow slight tolerance (+/- 30%) outside breed range
+      final toleranceMargin = ((maxRR! - minRR!) * 0.3).round();
+      final lowerBound = minRR! - toleranceMargin;
+      final upperBound = maxRR! + toleranceMargin;
+
+      if (respiratoryRateBpm < lowerBound || respiratoryRateBpm > upperBound) {
+        return null; // Outside plausible range for breed
+      }
+    }
+
+    return respiratoryRateBpm;
+  }
+
+  /// Display temperature only when valid
+  /// Returns null for invalid temperature readings
+  /// Note: This is NPM1300 die temperature (chip temp), not animal body temp
+  double? get displayTemperature {
+    // Check for NaN
+    if (temperatureC.isNaN) {
+      return null;
+    }
+
+    // Check NPM1300 operating range (-40 to +85°C)
+    // Typical die temperature during operation: 20-80°C
+    if (temperatureC < -40.0 || temperatureC > 85.0) {
+      return null;
+    }
+
+    return temperatureC;
   }
 
   /// Get temperature in Fahrenheit

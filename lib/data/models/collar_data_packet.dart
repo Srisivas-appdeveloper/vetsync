@@ -53,6 +53,26 @@ class CollarDataPacket {
   bool get hasSensorError => (statusFlags & 0x04) != 0; // Bit 2
   bool get isMotionDetected => (statusFlags & 0x08) != 0; // Bit 3
 
+  /// Convert raw temperature ADC value to Celsius
+  ///
+  /// NPM1300 PMIC Die Temperature conversion
+  /// Formula: T(°C) = RAW * 0.25 (standardized across codebase)
+  /// Valid range: -40°C to +85°C (NPM1300 operating range)
+  ///
+  /// This is die temperature, NOT animal body temperature.
+  ///
+  /// Returns [double.nan] if temperature is outside valid range
+  static double _convertTempRawToCelsius(int tempRaw) {
+    final tempC = tempRaw * 0.25;
+
+    // Validate against NPM1300 operating range
+    if (tempC < -40.0 || tempC > 85.0) {
+      return double.nan; // Invalid/out of range
+    }
+
+    return tempC;
+  }
+
   factory CollarDataPacket.fromBytes(Uint8List data) {
     if (data.isEmpty) {
       throw FormatException('Empty packet data');
@@ -99,8 +119,12 @@ class CollarDataPacket {
     final gyroZ = buffer.getInt16(18, Endian.little);
 
     // Byte 20-21: Environmental (int16)
-    // Spec doesn't define scaling, assuming 100 like previous code or raw
-    // Usually PMIC temp is raw. Assuming /100.0 based on typical implementation
+    // NPM1300 PMIC Die Temperature (12-bit ADC)
+    // Using simplified linear conversion: tempC = tempRaw / 100.0
+    // WARNING: This is APPROXIMATE. For precise conversion, calibrate with:
+    //   1. Measure collar with IR thermometer at known temps
+    //   2. Record raw ADC values
+    //   3. Compute linear fit: T = m * RAW + b
     final tempRaw = buffer.getInt16(20, Endian.little);
 
     // Byte 22-24: Device Status (uint16 + uint8)
@@ -121,7 +145,7 @@ class CollarDataPacket {
       // Setting to 0 as placeholders.
       heartRateBpm: 0,
       respiratoryRateBpm: 0,
-      temperatureC: tempRaw / 100.0,
+      temperatureC: _convertTempRawToCelsius(tempRaw),
       batteryPercent: batteryPercent,
       batteryMv: batteryMv,
       signalQuality: pressureQuality,
@@ -169,7 +193,7 @@ class CollarDataPacket {
       pressureRaw: pressureRaw,
       heartRateBpm: 0, // Calculated by App Algo
       respiratoryRateBpm: 0, // Calculated by App Algo
-      temperatureC: tempRaw / 100.0,
+      temperatureC: _convertTempRawToCelsius(tempRaw),
       batteryPercent: batteryPercent,
       batteryMv: batteryMv,
       signalQuality: 100, // Calculated by App Algo

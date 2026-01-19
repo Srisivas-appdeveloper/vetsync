@@ -347,12 +347,13 @@ class SyncService extends GetxService {
       'calibration_status': session.calibrationStatus,
       'calibration_error_bpm': session.calibrationErrorBpm,
       'calibration_correlation': session.calibrationCorrelation,
+      'created_at': session.startedAt.toIso8601String(),
       'started_at': session.startedAt.toIso8601String(),
       'surgery_started_at': session.surgeryStartedAt?.toIso8601String(),
       'surgery_ended_at': session.surgeryEndedAt?.toIso8601String(),
       'ended_at': session.endedAt?.toIso8601String(),
       'initial_position': session.initialPosition,
-      'initial_anxiety': session.initialAnxiety,
+      'anxiety_level': session.initialAnxiety,
       'initial_notes': session.initialNotes,
     };
   }

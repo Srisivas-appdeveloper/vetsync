@@ -15,94 +15,132 @@ class AnimalRepository {
 
   /// Search animals
   Future<List<Animal>> searchAnimals(String query) async {
-    if (_connectivity.isOnline.value) {
-      try {
-        final response = await _api.get(
-          ApiEndpoints.searchAnimals,
-          queryParameters: {'q': query, 'limit': 20},
-        );
+    try {
+      print('[AnimalRepo] 🔍 Searching animals: "$query"');
 
-        final responseData = response.data as Map<String, dynamic>;
-        final animalsData =
-            responseData['data'] ?? responseData['animals'] ?? responseData;
+      if (_connectivity.isOnline.value) {
+        try {
+          final response = await _api.get(
+            ApiEndpoints.searchAnimals,
+            queryParameters: {'q': query, 'limit': 20},
+          );
 
-        List<Animal> animals;
-        if (animalsData is List) {
-          animals = animalsData
-              .map((json) => Animal.fromJson(json as Map<String, dynamic>))
-              .toList();
-        } else {
-          animals = [];
+          final responseData = response.data as Map<String, dynamic>;
+          final animalsData =
+              responseData['data'] ?? responseData['animals'] ?? responseData;
+
+          List<Animal> animals;
+          if (animalsData is List) {
+            animals = animalsData
+                .map((json) => Animal.fromJson(json as Map<String, dynamic>))
+                .toList();
+          } else {
+            animals = [];
+          }
+
+          print('[AnimalRepo] ✅ Found ${animals.length} animals from server');
+
+          // Cache the results
+          for (final animal in animals) {
+            await _cacheAnimal(animal);
+          }
+
+          return animals;
+        } catch (e, stackTrace) {
+          print('[AnimalRepo] ⚠️ Server search failed, falling back to cache: $e');
+          print('[AnimalRepo] Stack trace: $stackTrace');
+          return _searchCachedAnimals(query);
         }
-
-        // Cache the results
-        for (final animal in animals) {
-          await _cacheAnimal(animal);
-        }
-
-        return animals;
-      } catch (e) {
-        // Fall back to cache on error
+      } else {
+        print('[AnimalRepo] 📴 Offline - searching cache');
         return _searchCachedAnimals(query);
       }
-    } else {
-      return _searchCachedAnimals(query);
+    } catch (e, stackTrace) {
+      print('[AnimalRepo] ❌ ERROR searching animals: $e');
+      print('[AnimalRepo] Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
   /// Get recent animals (or all animals from /animal/ endpoint)
   Future<List<Animal>> getRecentAnimals() async {
-    if (_connectivity.isOnline.value) {
-      try {
-        final response = await _api.get(
-          ApiEndpoints.recentAnimals,
-          queryParameters: {'limit': AppConfig.maxRecentAnimals},
-        );
+    try {
+      print('[AnimalRepo] 📡 Getting recent animals');
 
-        final responseData = response.data as Map<String, dynamic>;
-        final animalsData =
-            responseData['data'] ?? responseData['animals'] ?? responseData;
+      if (_connectivity.isOnline.value) {
+        try {
+          final response = await _api.get(
+            ApiEndpoints.recentAnimals,
+            queryParameters: {'limit': AppConfig.maxRecentAnimals},
+          );
 
-        List<Animal> animals;
-        if (animalsData is List) {
-          animals = animalsData
-              .map((json) => Animal.fromJson(json as Map<String, dynamic>))
-              .toList();
-        } else {
-          animals = [];
+          final responseData = response.data as Map<String, dynamic>;
+          final animalsData =
+              responseData['data'] ?? responseData['animals'] ?? responseData;
+
+          List<Animal> animals;
+          if (animalsData is List) {
+            animals = animalsData
+                .map((json) => Animal.fromJson(json as Map<String, dynamic>))
+                .toList();
+          } else {
+            animals = [];
+          }
+
+          print('[AnimalRepo] ✅ Retrieved ${animals.length} recent animals from server');
+
+          // Cache the results
+          for (final animal in animals) {
+            await _cacheAnimal(animal);
+          }
+
+          return animals;
+        } catch (e, stackTrace) {
+          print('[AnimalRepo] ⚠️ Server fetch failed, falling back to cache: $e');
+          print('[AnimalRepo] Stack trace: $stackTrace');
+          return _getRecentCachedAnimals();
         }
-
-        // Cache the results
-        for (final animal in animals) {
-          await _cacheAnimal(animal);
-        }
-
-        return animals;
-      } catch (e) {
+      } else {
+        print('[AnimalRepo] 📴 Offline - using cached recent animals');
         return _getRecentCachedAnimals();
       }
-    } else {
-      return _getRecentCachedAnimals();
+    } catch (e, stackTrace) {
+      print('[AnimalRepo] ❌ ERROR getting recent animals: $e');
+      print('[AnimalRepo] Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
   /// Get animal by ID
   Future<Animal?> getAnimal(String id) async {
-    if (_connectivity.isOnline.value) {
-      try {
-        final response = await _api.get(ApiEndpoints.animal(id));
-        final responseData = response.data as Map<String, dynamic>;
-        final animalData =
-            responseData['data'] as Map<String, dynamic>? ?? responseData;
+    try {
+      print('[AnimalRepo] 📡 Getting animal: $id');
 
-        final animal = Animal.fromJson(animalData);
-        await _cacheAnimal(animal);
-        return animal;
-      } catch (e) {
+      if (_connectivity.isOnline.value) {
+        try {
+          final response = await _api.get(ApiEndpoints.animal(id));
+          final responseData = response.data as Map<String, dynamic>;
+          final animalData =
+              responseData['data'] as Map<String, dynamic>? ?? responseData;
+
+          final animal = Animal.fromJson(animalData);
+          await _cacheAnimal(animal);
+
+          print('[AnimalRepo] ✅ Retrieved animal: ${animal.name}');
+          return animal;
+        } catch (e, stackTrace) {
+          print('[AnimalRepo] ⚠️ Server fetch failed, falling back to cache: $e');
+          print('[AnimalRepo] Stack trace: $stackTrace');
+          return _getCachedAnimal(id);
+        }
+      } else {
+        print('[AnimalRepo] 📴 Offline - using cached animal');
         return _getCachedAnimal(id);
       }
-    } else {
-      return _getCachedAnimal(id);
+    } catch (e, stackTrace) {
+      print('[AnimalRepo] ❌ ERROR getting animal $id: $e');
+      print('[AnimalRepo] Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
@@ -123,46 +161,71 @@ class AnimalRepository {
     String? ownerEmail,
     String? medicalNotes,
   }) async {
-    final response = await _api.post(
-      ApiEndpoints.animals,
-      data: {
-        'name': name,
-        'species': species.value,
-        'breed': breed,
-        'age_years': age,
-        'weight_kg': weightKg,
-        'sex': sex.value,
-        if (microchipNumber != null) 'microchip_number': microchipNumber,
-        if (color != null) 'color': color,
-        if (medicalConditions != null) 'medical_conditions': medicalConditions,
-        if (allergies != null) 'allergies': allergies,
-        'owner_name': ownerName,
-        if (ownerPhone != null) 'owner_phone': ownerPhone,
-        if (ownerEmail != null) 'owner_email': ownerEmail,
-        if (medicalNotes != null) 'medical_notes': medicalNotes,
-      },
-    );
+    try {
+      print('[AnimalRepo] 📝 Creating new animal');
+      print('[AnimalRepo] Name: $name');
+      print('[AnimalRepo] Species: ${species.value}');
+      print('[AnimalRepo] Breed: $breed');
+      print('[AnimalRepo] Owner: $ownerName');
 
-    final responseData = response.data as Map<String, dynamic>;
-    final animalData =
-        responseData['data'] as Map<String, dynamic>? ?? responseData;
+      final response = await _api.post(
+        ApiEndpoints.animals,
+        data: {
+          'name': name,
+          'species': species.value,
+          'breed': breed,
+          'age_years': age,
+          'weight_kg': weightKg,
+          'sex': sex.value,
+          if (microchipNumber != null) 'microchip_number': microchipNumber,
+          if (color != null) 'color': color,
+          if (medicalConditions != null) 'medical_conditions': medicalConditions,
+          if (allergies != null) 'allergies': allergies,
+          'owner_name': ownerName,
+          if (ownerPhone != null) 'owner_phone': ownerPhone,
+          if (ownerEmail != null) 'owner_email': ownerEmail,
+          if (medicalNotes != null) 'medical_notes': medicalNotes,
+        },
+      );
 
-    final animal = Animal.fromJson(animalData);
-    await _cacheAnimal(animal);
-    return animal;
+      final responseData = response.data as Map<String, dynamic>;
+      final animalData =
+          responseData['data'] as Map<String, dynamic>? ?? responseData;
+
+      final animal = Animal.fromJson(animalData);
+      await _cacheAnimal(animal);
+
+      print('[AnimalRepo] ✅ Animal created: ${animal.id}');
+      return animal;
+    } catch (e, stackTrace) {
+      print('[AnimalRepo] ❌ ERROR creating animal: $e');
+      print('[AnimalRepo] Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   /// Update animal
   Future<Animal> updateAnimal(String id, Map<String, dynamic> updates) async {
-    final response = await _api.patch(ApiEndpoints.animal(id), data: updates);
+    try {
+      print('[AnimalRepo] 📝 Updating animal: $id');
+      print('[AnimalRepo] Updates: $updates');
 
-    final responseData = response.data as Map<String, dynamic>;
-    final animalData =
-        responseData['data'] as Map<String, dynamic>? ?? responseData;
+      final response = await _api.patch(ApiEndpoints.animal(id), data: updates);
 
-    final animal = Animal.fromJson(animalData);
-    await _cacheAnimal(animal);
-    return animal;
+      final responseData = response.data as Map<String, dynamic>;
+      final animalData =
+          responseData['data'] as Map<String, dynamic>? ?? responseData;
+
+      final animal = Animal.fromJson(animalData);
+      await _cacheAnimal(animal);
+
+      print('[AnimalRepo] ✅ Animal updated');
+      return animal;
+    } catch (e, stackTrace) {
+      print('[AnimalRepo] ❌ ERROR updating animal $id: $e');
+      print('[AnimalRepo] Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   // ============================================================

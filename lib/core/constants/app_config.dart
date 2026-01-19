@@ -27,7 +27,8 @@ class AppConfig {
   static const Duration bleConnectionTimeout = Duration(seconds: 15);
 
   // BLE Connectivity Optimization
-  static const int targetMtuSize = 247; // Optimal MTU for efficient data transfer
+  static const int targetMtuSize =
+      247; // Optimal MTU for efficient data transfer
   static const Duration rssiMonitorInterval = Duration(seconds: 10);
   static const int minAcceptableRssi = -90; // dBm, below this = poor connection
   static const double maxCrcErrorRate = 0.1; // 10% max error rate
@@ -38,8 +39,20 @@ class AppConfig {
 
   // Session Configuration
   static const Duration sessionTimeout = Duration(hours: 8);
-  static const int baselineDurationSeconds = 300; // 5 minutes
+
+  // Baseline Configuration (Redesigned)
+  static const int baselineDurationSeconds = 120; // 2 minutes minimum
+  static const int baselineMinimumSeconds = 120; // 2 minutes minimum
+  static const int baselineMaximumSeconds = 300; // 5 minutes maximum
   static const int minimumBaselineQuality = 60;
+  static const double baselineStabilityThreshold =
+      0.60; // 60% stability required
+  static const double baselineConfidenceThreshold =
+      0.70; // 70% HR confidence required
+  static const int baselineMinimumHRSamples =
+      50; // At least 50 valid HR measurements
+  static const double baselineCVThreshold =
+      0.20; // 20% coefficient of variation max
 
   // Data Collection
   static const int filteredSampleRate = 100; // Hz
@@ -123,16 +136,18 @@ class ApiEndpoints {
   static String collarStatus(String id) => '/collars/$id/status';
 
   // Sessions
-  static const String sessions = '/sessions';
-  static String session(String id) => '/sessions/$id';
-  static String sessionPhase(String id) => '/sessions/$id/phase';
-  static String sessionBaseline(String id) => '/sessions/$id/baseline';
-  static String sessionAnnotations(String id) => '/sessions/$id/annotations';
-  static String sessionVitals(String id) => '/sessions/$id/vitals';
-  static String sessionVitalsBatch(String id) => '/sessions/$id/vitals/batch';
-  static String sessionJoinCode(String id) => '/sessions/$id/join-code';
-  static String sessionCollar(String id) => '/sessions/$id/collar';
-  static const String joinSession = '/sessions/join';
+  static const String sessions = '/api/v1/sessions';
+  static String session(String id) => '/api/v1/sessions/$id';
+  static String sessionPhase(String id) => '/api/v1/sessions/$id/phase';
+  static String sessionBaseline(String id) => '/api/v1/sessions/$id/baseline';
+  static String sessionAnnotations(String id) =>
+      '/api/v1/sessions/$id/annotations';
+  static String sessionVitals(String id) => '/api/v1/sessions/$id/vitals';
+  static String sessionVitalsBatch(String id) =>
+      '/api/v1/sessions/$id/vitals/batch';
+  static String sessionJoinCode(String id) => '/api/v1/sessions/$id/join-code';
+  static String sessionCollar(String id) => '/api/v1/sessions/$id/collar';
+  static const String joinSession = '/api/v1/sessions/join';
 
   // Annotations
   static const String annotations = '/annotations';

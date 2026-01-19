@@ -47,8 +47,8 @@ class Collar {
 
   factory Collar.fromJson(Map<String, dynamic> json) {
     return Collar(
-      id: json['collar_id'] as String? ?? json['id'] as String,
-      serialNumber: json['serial_number'] as String,
+      id: json['collar_id'] as String? ?? json['id'] as String? ?? '',
+      serialNumber: json['serial_number'] as String? ?? '',
       firmwareVersion: json['firmware_version'] as String?,
       batteryPercent: json['battery_percent'] as int? ?? 100,
       status: CollarStatus.fromString(json['status'] as String? ?? 'available'),
@@ -57,8 +57,12 @@ class Collar {
       lastSeenAt: json['last_seen_at'] != null
           ? DateTime.parse(json['last_seen_at'] as String)
           : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.now(),
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../../../app/themes/app_colors.dart';
 import '../../../app/themes/app_typography.dart';
 import '../../../app/themes/app_theme.dart';
+import '../../../core/constants/app_config.dart';
 import '../../controllers/baseline_controller.dart';
 import '../../controllers/session_controller.dart';
 import '../../widgets/common_widgets.dart';
@@ -45,14 +46,10 @@ class BaselineCollectionPage extends GetView<BaselineController> {
   }
   
   Widget _buildContent() {
-    if (controller.isComplete.value) {
-      return _buildCompleteView();
-    }
-    
     if (!controller.isCollecting.value) {
       return _buildStartView();
     }
-    
+
     return _buildCollectionView();
   }
   
@@ -184,7 +181,10 @@ class BaselineCollectionPage extends GetView<BaselineController> {
         
         // Quality indicator
         _buildQualityBar(),
-        
+
+        // Real-time quality feedback
+        _buildQualityIndicators(),
+
         // Controls
         _buildControls(),
       ],
@@ -216,19 +216,41 @@ class BaselineCollectionPage extends GetView<BaselineController> {
               valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
             ),
           )),
+          const SizedBox(height: 12),
+
+          // Completion readiness indicator
+          Obx(() => controller.canComplete.value
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.successSurface,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle, color: AppColors.success, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Ready to complete',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.successDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink()),
           const SizedBox(height: 8),
-          
-          // Status text
+
+          // Status message
           Obx(() => Text(
-            controller.isPaused.value
-                ? 'PAUSED - Tap Resume to continue'
-                : 'Collecting baseline data...',
-            style: AppTypography.labelSmall.copyWith(
-              color: controller.isPaused.value 
-                  ? AppColors.warning 
-                  : AppColors.textSecondary,
-            ),
-          )),
+                controller.statusMessage.value,
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              )),
         ],
       ),
     );
@@ -255,7 +277,6 @@ class BaselineCollectionPage extends GetView<BaselineController> {
           Expanded(
             child: Obx(() => _WaveformChart(
               data: controller.waveformBuffer.toList(),
-              isPaused: controller.isPaused.value,
             )),
           ),
         ],
@@ -268,14 +289,19 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Obx(() {
         final vitals = controller.latestVitals;
-        
+
+        // Use confidence-gated display values
+        final displayHR = vitals?.displayHR;
+        final displayRR = vitals?.displayRR;
+        final displayTemp = vitals?.displayTemperature;
+
         return Row(
           children: [
             Expanded(
               child: VitalCard(
                 label: 'Heart Rate',
-                value: vitals?.heartRateBpm.toString() ?? '--',
-                unit: 'bpm',
+                value: displayHR?.toString() ?? 'Analyzing...',
+                unit: displayHR != null ? 'bpm' : '',
                 icon: Icons.favorite,
                 color: AppColors.error,
                 compact: true,
@@ -285,8 +311,8 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             Expanded(
               child: VitalCard(
                 label: 'Resp Rate',
-                value: vitals?.respiratoryRateBpm.toString() ?? '--',
-                unit: 'brpm',
+                value: displayRR?.toString() ?? 'Analyzing...',
+                unit: displayRR != null ? 'brpm' : '',
                 icon: Icons.air,
                 color: AppColors.info,
                 compact: true,
@@ -296,8 +322,8 @@ class BaselineCollectionPage extends GetView<BaselineController> {
             Expanded(
               child: VitalCard(
                 label: 'Temp',
-                value: vitals?.temperatureC.toStringAsFixed(1) ?? '--',
-                unit: '°C',
+                value: displayTemp?.toStringAsFixed(1) ?? '--',
+                unit: displayTemp != null ? '°C' : '',
                 icon: Icons.thermostat,
                 color: AppColors.warning,
                 compact: true,
@@ -344,169 +370,179 @@ class BaselineCollectionPage extends GetView<BaselineController> {
     );
   }
   
-  Widget _buildControls() {
+  Widget _buildQualityIndicators() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          // Restart button
-          OutlinedButton.icon(
-            onPressed: controller.restartCollection,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Restart'),
-          ),
-          const Spacer(),
-          
-          // Pause/Resume button
-          Obx(() => ElevatedButton.icon(
-            onPressed: controller.isPaused.value
-                ? controller.resumeCollection
-                : controller.pauseCollection,
-            icon: Icon(
-              controller.isPaused.value ? Icons.play_arrow : Icons.pause,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Obx(() {
+        final stability = controller.currentStability.value;
+        final validHRCount = controller.heartRateSamples.length;
+
+        return Column(
+          children: [
+            // Stability indicator
+            _buildQualityIndicator(
+              label: 'Signal Stability',
+              value: stability.round(),
+              icon: Icons.waves,
+              color: _getQualityIndicatorColor(stability.round()),
             ),
-            label: Text(controller.isPaused.value ? 'Resume' : 'Pause'),
-          )),
-        ],
-      ),
+            const SizedBox(height: 12),
+
+            // Sample count indicator
+            _buildQualityIndicator(
+              label: 'Valid HR Samples',
+              value: validHRCount,
+              maxValue: AppConfig.baselineMinimumHRSamples,
+              icon: Icons.favorite,
+              color: validHRCount >= AppConfig.baselineMinimumHRSamples
+                  ? AppColors.success
+                  : AppColors.warning,
+              showAsCount: true,
+            ),
+
+            // Actionable guidance
+            if (stability < 60 && validHRCount >= 10)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _buildGuidance('Keep pet calm and still for better quality'),
+              ),
+          ],
+        );
+      }),
     );
   }
-  
-  Widget _buildCompleteView() {
-    final baseline = controller.baselineData.value;
-    if (baseline == null) {
-      return const Center(child: Text('No data collected'));
-    }
-    
-    return SingleChildScrollView(
-      padding: AppSpacing.screenPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Success header
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppColors.successSurface,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.check_circle,
-                  size: 64,
-                  color: AppColors.success,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Baseline Complete',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: AppColors.successDark,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Quality: ${baseline.qualityLabel} (${baseline.qualityScore}%)',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: AppColors.successDark,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Baseline stats
-          Text(
-            'Baseline Statistics',
-            style: AppTypography.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          
-          _buildStatCard(
-            'Heart Rate',
-            '${baseline.heartRate.mean.round()} bpm',
-            'Range: ${baseline.heartRate.min.round()}-${baseline.heartRate.max.round()} bpm',
-            baseline.heartRate.isStable,
-          ),
-          const SizedBox(height: 8),
-          
-          _buildStatCard(
-            'Respiratory Rate',
-            '${baseline.respiratoryRate.mean.round()} brpm',
-            'Range: ${baseline.respiratoryRate.min.round()}-${baseline.respiratoryRate.max.round()} brpm',
-            baseline.respiratoryRate.isStable,
-          ),
-          const SizedBox(height: 8),
-          
-          _buildStatCard(
-            'Temperature',
-            '${baseline.temperature.mean.toStringAsFixed(1)}°C',
-            'Range: ${baseline.temperature.min.toStringAsFixed(1)}-${baseline.temperature.max.toStringAsFixed(1)}°C',
-            baseline.temperature.isStable,
-          ),
-          const SizedBox(height: 24),
-          
-          // Actions
-          ElevatedButton(
-            onPressed: controller.saveAndProceed,
-            child: const Text('Continue to Pre-Surgery'),
-          ),
-          const SizedBox(height: 12),
-          
-          OutlinedButton(
-            onPressed: controller.restartCollection,
-            child: const Text('Recollect Baseline'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildStatCard(String label, String value, String range, bool isStable) {
+
+  Widget _buildQualityIndicator({
+    required String label,
+    required int value,
+    int maxValue = 100,
+    required IconData icon,
+    required Color color,
+    bool showAsCount = false,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label, style: AppTypography.labelSmall),
                 const SizedBox(height: 4),
-                Text(value, style: AppTypography.titleLarge),
-                const SizedBox(height: 2),
-                Text(range, style: AppTypography.caption),
+                if (showAsCount)
+                  Row(
+                    children: [
+                      Text(
+                        '$value samples',
+                        style: AppTypography.titleSmall.copyWith(color: color),
+                      ),
+                      if (value >= maxValue) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.check_circle,
+                          color: color,
+                          size: 16,
+                        ),
+                      ] else ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '(need $maxValue)',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: color.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: value / maxValue,
+                      minHeight: 8,
+                      backgroundColor: AppColors.surfaceVariant,
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                    ),
+                  ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isStable ? AppColors.successSurface : AppColors.warningSurface,
-              borderRadius: BorderRadius.circular(8),
+          if (!showAsCount)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(
+                '$value%',
+                style: AppTypography.titleMedium.copyWith(color: color),
+              ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isStable ? Icons.check : Icons.warning,
-                  size: 14,
-                  color: isStable ? AppColors.success : AppColors.warning,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  isStable ? 'Stable' : 'Variable',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: isStable ? AppColors.successDark : AppColors.warningDark,
-                  ),
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGuidance(String message) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.infoSurface,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: AppColors.info, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.infoDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getQualityIndicatorColor(int quality) {
+    if (quality >= 75) return AppColors.success;
+    if (quality >= 50) return AppColors.warning;
+    return AppColors.error;
+  }
+
+  Widget _buildControls() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          // Restart button (with confirmation dialog)
+          OutlinedButton.icon(
+            onPressed: () => _showRestartConfirmation(),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Restart'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.warning,
+              side: const BorderSide(color: AppColors.warning),
+            ),
+          ),
+
+          // Abort button (with confirmation dialog)
+          OutlinedButton.icon(
+            onPressed: () => _showAbortConfirmation(),
+            icon: const Icon(Icons.close),
+            label: const Text('Abort'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.error,
+              side: const BorderSide(color: AppColors.error),
             ),
           ),
         ],
@@ -514,6 +550,63 @@ class BaselineCollectionPage extends GetView<BaselineController> {
     );
   }
   
+  void _showRestartConfirmation() {
+    Get.dialog(
+      AlertDialog(
+        title: const Text('Restart Baseline?'),
+        content: Obx(() => Text(
+          'This will discard all collected data and start over. '
+          'The 5-minute timer will reset.\n\n'
+          'Current progress: ${controller.remainingTimeFormatted} remaining',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.restartCollection();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+            ),
+            child: const Text('Restart'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAbortConfirmation() {
+    Get.dialog(
+      AlertDialog(
+        title: const Text('Abort Baseline?'),
+        content: const Text(
+          'This will stop baseline collection. '
+          'You will need to restart from the beginning.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.abortCollection();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            child: const Text('Abort'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showCancelDialog() {
     Get.dialog(
       AlertDialog(
@@ -543,11 +636,9 @@ class BaselineCollectionPage extends GetView<BaselineController> {
 /// Real-time waveform chart using fl_chart
 class _WaveformChart extends StatelessWidget {
   final List<double> data;
-  final bool isPaused;
-  
+
   const _WaveformChart({
     required this.data,
-    this.isPaused = false,
   });
   
   @override
@@ -591,14 +682,13 @@ class _WaveformChart extends StatelessWidget {
             spots: spots,
             isCurved: true,
             curveSmoothness: 0.2,
-            color: isPaused ? AppColors.textDisabled : AppColors.primary,
+            color: AppColors.primary,
             barWidth: 1.5,
             isStrokeCapRound: true,
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: (isPaused ? AppColors.textDisabled : AppColors.primary)
-                  .withOpacity(0.1),
+              color: AppColors.primary.withOpacity(0.1),
             ),
           ),
         ],

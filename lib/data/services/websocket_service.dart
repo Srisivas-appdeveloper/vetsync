@@ -32,6 +32,9 @@ class WebSocketService extends GetxService {
   Function(Map<String, dynamic>)? onCalibrationComplete;
   Function(String)? onLaptopCommand;
 
+  // Packet counter for throttled logging
+  int _packetsSent = 0;
+
   /// Connect to cloud relay server
   Future<void> connectToRelay({required String sessionId}) async {
     if (connectionState.value == WebSocketState.connected) {
@@ -240,9 +243,13 @@ class WebSocketService extends GetxService {
 
     _sendJson(data);
 
-    print(
-      '[WS] 🚀 Sent collar data - seq:${packet.sequenceNumber}, raw:${packet.pressureRaw}, filtered:${packet.pressureFiltered}, temp:${packet.temperatureC}°C',
-    );
+    // Throttle logging - only log every 100th packet to avoid flooding console
+    _packetsSent++;
+    if (_packetsSent % 100 == 0) {
+      print(
+        '[WS] 🚀 Sent collar data packet #$_packetsSent - seq:${packet.sequenceNumber}, raw:${packet.pressureRaw}, filtered:${packet.pressureFiltered}, temp:${packet.temperatureC}°C',
+      );
+    }
   }
 
   /// Send session phase change

@@ -8,16 +8,32 @@ import '../../../app/themes/app_theme.dart';
 import '../../../data/models/models.dart';
 import '../../controllers/session_controller.dart';
 import '../../widgets/common_widgets.dart';
-import '../../widgets/waveform_chart.dart';
 
 /// Pre-surgery monitoring page - after baseline, before surgery starts
-class PreSurgeryPage extends StatelessWidget {
+class PreSurgeryPage extends StatefulWidget {
   const PreSurgeryPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final sessionController = Get.find<SessionController>();
+  State<PreSurgeryPage> createState() => _PreSurgeryPageState();
+}
 
+class _PreSurgeryPageState extends State<PreSurgeryPage> {
+  late final SessionController sessionController;
+
+  @override
+  void initState() {
+    super.initState();
+    sessionController = Get.find<SessionController>();
+
+    // Load baseline data when entering pre-surgery phase
+    // This ensures baseline is available even if navigating from other routes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      sessionController.loadBaselineData();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -45,10 +61,6 @@ class PreSurgeryPage extends StatelessWidget {
                   children: [
                     // Vitals display
                     _buildVitalsSection(sessionController),
-                    const SizedBox(height: 16),
-
-                    // Waveform
-                    _buildWaveformSection(),
                     const SizedBox(height: 16),
 
                     // Baseline summary
@@ -216,36 +228,69 @@ class PreSurgeryPage extends StatelessWidget {
     });
   }
 
-  Widget _buildWaveformSection() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Use 25% of screen height or minimum 180px for waveform
-        final screenHeight = MediaQuery.of(context).size.height;
-        final waveformHeight = (screenHeight * 0.25).clamp(180.0, 300.0);
-
-        return Container(
-          height: waveformHeight,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: const RealtimeWaveformChart(
-            displaySeconds: 10,
-            sampleRate: 100,
-            minY: -1.0,
-            maxY: 1.0,
-            title: 'BCG Signal',
-            lineColor: AppColors.info,
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildBaselineSummary(SessionController sessionController) {
     return Obx(() {
-      final session = sessionController.currentSession.value;
+      final baseline = sessionController.baselineData.value;
+
+      if (baseline == null) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.warningSurface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.warning,
+                    color: AppColors.warning,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'No baseline data available',
+                          style: AppTypography.titleSmall.copyWith(
+                            color: AppColors.warningDark,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Consider collecting baseline for better monitoring and anomaly detection.',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.warningDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _returnToBaselineCollection(),
+                  icon: const Icon(Icons.analytics_outlined, size: 18),
+                  label: const Text('Collect Baseline'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.warning,
+                    side: BorderSide(color: AppColors.warning),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
 
       return Container(
         padding: const EdgeInsets.all(16),
@@ -265,10 +310,12 @@ class PreSurgeryPage extends StatelessWidget {
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Baseline Collected',
-                  style: AppTypography.titleSmall.copyWith(
-                    color: AppColors.successDark,
+                Expanded(
+                  child: Text(
+                    'Baseline Collected (${baseline.qualityScore}% quality)',
+                    style: AppTypography.titleSmall.copyWith(
+                      color: AppColors.successDark,
+                    ),
                   ),
                 ),
               ],
@@ -279,16 +326,20 @@ class PreSurgeryPage extends StatelessWidget {
               children: [
                 _baselineStat(
                   'HR',
-                  '${session?.baselineHeartRate?.round() ?? '--'} bpm',
+                  '${baseline.heartRate.mean.round()} bpm',
+                  range: '${baseline.heartRate.min.round()}-${baseline.heartRate.max.round()}',
                 ),
                 _baselineStat(
                   'RR',
-                  '${session?.baselineRespRate?.round() ?? '--'} brpm',
+                  '${baseline.respiratoryRate.mean.round()} brpm',
+                  range: '${baseline.respiratoryRate.min.round()}-${baseline.respiratoryRate.max.round()}',
                 ),
-                _baselineStat(
-                  'Temp',
-                  '${session?.baselineTemp?.toStringAsFixed(1) ?? '--'} °C',
-                ),
+                if (baseline.temperature.mean > 15 && baseline.temperature.mean < 45)
+                  _baselineStat(
+                    'Temp',
+                    '${baseline.temperature.mean.toStringAsFixed(1)} °C',
+                    range: '${baseline.temperature.min.toStringAsFixed(1)}-${baseline.temperature.max.toStringAsFixed(1)}',
+                  ),
               ],
             ),
           ],
@@ -297,7 +348,7 @@ class PreSurgeryPage extends StatelessWidget {
     });
   }
 
-  Widget _baselineStat(String label, String value) {
+  Widget _baselineStat(String label, String value, {String? range}) {
     return Column(
       children: [
         Text(label, style: AppTypography.caption),
@@ -306,8 +357,19 @@ class PreSurgeryPage extends StatelessWidget {
           value,
           style: AppTypography.labelMedium.copyWith(
             color: AppColors.successDark,
+            fontWeight: FontWeight.bold,
           ),
         ),
+        if (range != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            range,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.successDark.withOpacity(0.7),
+              fontSize: 10,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -375,6 +437,12 @@ class PreSurgeryPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16),
       ),
     );
+  }
+
+  void _returnToBaselineCollection() {
+    // Navigate back to baseline collection page
+    Get.back(); // Go back from pre-surgery
+    Get.toNamed(Routes.baselineCollection);
   }
 
   void _showAnnotationSheet(SessionController sessionController) {

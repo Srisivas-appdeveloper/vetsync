@@ -46,7 +46,9 @@ class BleService extends GetxService {
   static const double _batteryAlpha =
       0.1; // Smoothing factor (0-1, lower = smoother) - reduced from 0.2
   DateTime? _lastBatteryUpdate; // Throttle battery updates
-  static const Duration _batteryUpdateInterval = Duration(seconds: 5); // Min time between updates
+  static const Duration _batteryUpdateInterval = Duration(
+    seconds: 5,
+  ); // Min time between updates
 
   // Signal quality
   final RxInt signalQuality = 100.obs;
@@ -265,13 +267,17 @@ class BleService extends GetxService {
     final result = _bcgService.latestResult;
     if (result == null) return;
 
-    // Create vitals from BCG result
+    // Create vitals from BCG result with confidence values for gating
     final vitals = Vitals(
       heartRateBpm: result.heartRateBpm,
       respiratoryRateBpm: result.respiratoryRateBpm,
       temperatureC: _bcgService.temperatureCelsius,
       signalQuality: result.signalQuality,
       timestamp: DateTime.now().toUtc(),
+      // Pass confidence scores for display gating
+      hrConfidence: result.hrConfidence,
+      rrConfidence: result.rrConfidence,
+      // Note: breed ranges will be set by session controller if needed
     );
 
     // Update local state helpers - ALWAYS update signal quality, not just when valid
@@ -281,7 +287,9 @@ class BleService extends GetxService {
     // Debug log occasionally to verify vitals are being emitted
     _vitalCount++;
     if (_vitalCount % 20 == 0) {
-      debugPrint('[BLE] Emitting vital #$_vitalCount: HR=${vitals.heartRateBpm}, RR=${vitals.respiratoryRateBpm}, Q=${vitals.signalQuality}%, Valid=${result.isValid}');
+      // debugPrint(
+      //   '[BLE] Emitting vital #$_vitalCount: HR=${vitals.heartRateBpm}, RR=${vitals.respiratoryRateBpm}, Q=${vitals.signalQuality}%, Valid=${result.isValid}',
+      // );
     }
 
     // Emit vitals
@@ -436,7 +444,9 @@ class BleService extends GetxService {
       await Future.delayed(const Duration(seconds: 7));
       await FlutterBluePlus.stopScan();
 
-      print('[BLE] Strategy 1 complete: Found $totalDeviceCount total devices, $vetsyncDeviceCount VetSync collars');
+      print(
+        '[BLE] Strategy 1 complete: Found $totalDeviceCount total devices, $vetsyncDeviceCount VetSync collars',
+      );
 
       if (vetsyncDeviceCount > 0) {
         print('[BLE] ✅ SUCCESS with Strategy 1');
@@ -461,7 +471,9 @@ class BleService extends GetxService {
       await Future.delayed(const Duration(seconds: 10));
       await FlutterBluePlus.stopScan();
 
-      print('[BLE] Strategy 2 complete: Found $totalDeviceCount total devices, $vetsyncDeviceCount VetSync collars');
+      print(
+        '[BLE] Strategy 2 complete: Found $totalDeviceCount total devices, $vetsyncDeviceCount VetSync collars',
+      );
 
       if (vetsyncDeviceCount > 0) {
         print('[BLE] ✅ SUCCESS with Strategy 2');
@@ -484,19 +496,27 @@ class BleService extends GetxService {
       await Future.delayed(const Duration(seconds: 7));
       await FlutterBluePlus.stopScan();
 
-      print('[BLE] Strategy 3 complete: Found $totalDeviceCount total devices, $vetsyncDeviceCount VetSync collars');
+      print(
+        '[BLE] Strategy 3 complete: Found $totalDeviceCount total devices, $vetsyncDeviceCount VetSync collars',
+      );
 
       if (vetsyncDeviceCount > 0) {
         print('[BLE] ✅ SUCCESS with Strategy 3');
         print('[BLE] 📋 Collars in UI list: ${discoveredCollars.length}');
       } else {
         print('[BLE] ❌ FAILED: No VetSync collars found after all strategies');
-        print('[BLE] Total BLE devices seen across all strategies: $totalDeviceCount');
+        print(
+          '[BLE] Total BLE devices seen across all strategies: $totalDeviceCount',
+        );
         if (totalDeviceCount == 0) {
           print('[BLE] ⚠️ NO BLE devices found at all - possible issues:');
           print('[BLE]    1. Bluetooth permissions not granted properly');
-          print('[BLE]    2. Location services disabled (required for BLE on Android)');
-          print('[BLE]    3. Device BLE stack issue - try airplane mode toggle');
+          print(
+            '[BLE]    2. Location services disabled (required for BLE on Android)',
+          );
+          print(
+            '[BLE]    3. Device BLE stack issue - try airplane mode toggle',
+          );
           print('[BLE]    4. OxygenOS battery optimization blocking BLE');
         }
       }
@@ -521,7 +541,9 @@ class BleService extends GetxService {
 
   /// Process discovered device
   void _processDiscoveredDevice(ScanResult result) {
-    print('[BLE] 🔍 _processDiscoveredDevice called for: ${result.device.platformName}');
+    print(
+      '[BLE] 🔍 _processDiscoveredDevice called for: ${result.device.platformName}',
+    );
 
     // Extract collar ID from advertisement data or device name
     final deviceName = result.device.platformName;
@@ -743,7 +765,9 @@ class BleService extends GetxService {
           // Don't count keep-alive failures if data is still flowing
           if (timeSinceLastData < const Duration(seconds: 15)) {
             // Data is flowing, ignore battery request failure
-            print('[BLE] Battery request failed but data is flowing - ignoring');
+            print(
+              '[BLE] Battery request failed but data is flowing - ignoring',
+            );
             _keepAliveFailureCount = 0;
           } else {
             _keepAliveFailureCount++;
@@ -809,12 +833,12 @@ class BleService extends GetxService {
       // iOS auto-negotiates, Android allows up to 517
       final mtu = await device.requestMtu(AppConfig.targetMtuSize);
       mtuSize.value = mtu;
-      print('[BLE] 📶 MTU negotiated: $mtu bytes (target: ${AppConfig.targetMtuSize})');
+      print(
+        '[BLE] 📶 MTU negotiated: $mtu bytes (target: ${AppConfig.targetMtuSize})',
+      );
 
       if (mtu < 100) {
-        print(
-          '[BLE] ⚠️ MTU is low ($mtu bytes). Connection may be slower.',
-        );
+        print('[BLE] ⚠️ MTU is low ($mtu bytes). Connection may be slower.');
       } else if (mtu >= AppConfig.targetMtuSize) {
         print('[BLE] ✅ Optimal MTU achieved for high-speed data transfer');
       }
@@ -857,7 +881,9 @@ class BleService extends GetxService {
 
         // Log connection quality warnings based on thresholds
         if (rssi < AppConfig.minAcceptableRssi) {
-          print('[BLE] ⚠️ Weak signal: ${rssi}dBm (connection may be unstable)');
+          print(
+            '[BLE] ⚠️ Weak signal: ${rssi}dBm (connection may be unstable)',
+          );
         } else if (rssi > -70 && DateTime.now().second % 30 == 0) {
           // Log good signal occasionally
           print('[BLE] 📶 Signal strength: ${rssi}dBm (good)');
@@ -1035,7 +1061,7 @@ class BleService extends GetxService {
     // Log parser stats occasionally
     if (_packetCount % 100 == 0 && _packetCount > 0) {
       final stats = _streamParser.statistics;
-      debugPrint('[BLE] Parser stats: $stats');
+      // debugPrint('[BLE] Parser stats: $stats');
     }
 
     // Handle responses
@@ -1050,12 +1076,18 @@ class BleService extends GetxService {
 
       if (!packet.crcValid) {
         _crcErrorCount++;
-        final errorRate = (_crcErrorCount / _totalPacketCount * 100).toStringAsFixed(1);
-        print('⚠️ [BLE] CRC Error in packet (ts: ${packet.timestampUs}us) - Error rate: $errorRate%');
+        final errorRate = (_crcErrorCount / _totalPacketCount * 100)
+            .toStringAsFixed(1);
+        print(
+          '⚠️ [BLE] CRC Error in packet (ts: ${packet.timestampUs}us) - Error rate: $errorRate%',
+        );
 
         // Warn if error rate exceeds threshold
-        if (_totalPacketCount > 50 && _crcErrorCount / _totalPacketCount > AppConfig.maxCrcErrorRate) {
-          print('❌ [BLE] HIGH CRC error rate ($errorRate%) - connection quality degraded');
+        if (_totalPacketCount > 50 &&
+            _crcErrorCount / _totalPacketCount > AppConfig.maxCrcErrorRate) {
+          print(
+            '❌ [BLE] HIGH CRC error rate ($errorRate%) - connection quality degraded',
+          );
         }
         continue; // Skip this packet
       }
@@ -1086,7 +1118,9 @@ class BleService extends GetxService {
         packetType: packet.packetType,
         sequenceNumber:
             0, // Not available in new validated packet structure yet
-        timestampMs: packet.timestampUs ~/ 1000, // Convert us to ms for legacy compatibility
+        timestampMs:
+            packet.timestampUs ~/
+            1000, // Convert us to ms for legacy compatibility
         heartRateBpm: _bcgService.latestResult?.heartRateBpm ?? 0,
         respiratoryRateBpm: _bcgService.latestResult?.respiratoryRateBpm ?? 0,
         temperatureC: packet.temperatureCelsius,
@@ -1140,7 +1174,11 @@ class BleService extends GetxService {
   }
 
   /// Send command to collar
-  Future<void> sendCommand(CollarCommand command) async {
+  Future<void> sendCommand(
+    CollarCommand command, {
+    Duration timeout = const Duration(seconds: 5),
+    bool waitForResponse = false,
+  }) async {
     if (_commandCharacteristic == null) {
       throw BleException(
         'Not connected or command characteristic not available',
@@ -1148,15 +1186,31 @@ class BleService extends GetxService {
     }
 
     try {
-      // Add timeout to prevent hanging on failed writes
-      await _commandCharacteristic!
-          .write(command.toBytes(), withoutResponse: false)
-          .timeout(
-            const Duration(seconds: 3),
-            onTimeout: () {
-              throw BleException('Command write timeout');
-            },
-          );
+      print(
+        '[BLE] 📤 Sending command (timeout: ${timeout.inSeconds}s, waitForResponse: $waitForResponse)...',
+      );
+
+      if (waitForResponse) {
+        // Wait for acknowledgment with timeout
+        await _commandCharacteristic!
+            .write(command.toBytes(), withoutResponse: false)
+            .timeout(
+              timeout,
+              onTimeout: () {
+                throw BleException(
+                  'Command write timeout after ${timeout.inSeconds}s',
+                );
+              },
+            );
+      } else {
+        // Fire-and-forget - don't wait for ACK
+        await _commandCharacteristic!.write(
+          command.toBytes(),
+          withoutResponse: true,
+        );
+      }
+
+      print('[BLE] ✅ Command sent successfully');
     } catch (e) {
       print('[BLE] ❌ Command send failed: $e');
       rethrow;
@@ -1169,13 +1223,21 @@ class BleService extends GetxService {
     // Map enum to protocol value (0x01 = STANDARD, 0x02 = HIGH-RES/RAW)
     final modeValue = targetMode == FirmwareMode.raw ? 0x02 : 0x01;
 
+    print(
+      '[BLE] 🔄 Switching mode to: ${targetMode == FirmwareMode.raw ? "RAW/HIGH-RES" : "STANDARD"}',
+    );
+
     _bcgService.onModeChange(modeValue);
 
     final command = CollarCommand.switchMode(targetMode: modeValue);
-    await sendCommand(command);
+
+    // Mode switch: collar doesn't send ACK, so use fire-and-forget
+    // We'll verify success by monitoring data stream for mode change
+    await sendCommand(command, waitForResponse: false);
 
     // Optimistically update mode
     currentMode.value = targetMode;
+    print('[BLE] ✅ Mode switch command sent (fire-and-forget)');
   }
 
   /// Request status from collar

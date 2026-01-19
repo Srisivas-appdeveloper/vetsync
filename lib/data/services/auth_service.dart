@@ -50,26 +50,45 @@ class AuthService extends GetxService {
 
   /// Check if user has valid session
   Future<bool> checkAuthStatus() async {
-    final token = await _storage.getAccessToken();
-    if (token == null) {
-      isAuthenticated.value = false;
-      return false;
-    }
+    try {
+      print('[AuthService] 🔐 Checking auth status');
 
-    final expiry = await _storage.getTokenExpiry();
-    if (expiry != null && DateTime.now().isAfter(expiry)) {
-      // Token expired - try to refresh
-      final refreshed = await _refreshToken();
-      if (!refreshed) {
+      final token = await _storage.getAccessToken();
+      if (token == null) {
+        print('[AuthService] ❌ No access token found');
         isAuthenticated.value = false;
         return false;
       }
-    }
 
-    // Load observer info
-    await _loadObserverInfo();
-    isAuthenticated.value = currentObserver.value != null;
-    return isAuthenticated.value;
+      print('[AuthService] ✅ Access token found');
+
+      final expiry = await _storage.getTokenExpiry();
+      if (expiry != null && DateTime.now().isAfter(expiry)) {
+        print('[AuthService] ⚠️ Token expired, attempting refresh');
+        // Token expired - try to refresh
+        final refreshed = await _refreshToken();
+        if (!refreshed) {
+          print('[AuthService] ❌ Token refresh failed');
+          isAuthenticated.value = false;
+          return false;
+        }
+        print('[AuthService] ✅ Token refreshed successfully');
+      } else {
+        print('[AuthService] ✅ Token still valid');
+      }
+
+      // Load observer info
+      await _loadObserverInfo();
+      isAuthenticated.value = currentObserver.value != null;
+
+      print('[AuthService] Auth status: ${isAuthenticated.value}');
+      return isAuthenticated.value;
+    } catch (e, stackTrace) {
+      print('[AuthService] ❌ ERROR checking auth status: $e');
+      print('[AuthService] Stack trace: $stackTrace');
+      isAuthenticated.value = false;
+      return false;
+    }
   }
 
   /// Load observer info from storage
@@ -100,8 +119,14 @@ class AuthService extends GetxService {
     required String password,
   }) async {
     try {
+      print('[AuthService] 🔐 Login attempt');
+      print('[AuthService] Observer ID: $observerId');
+
       final deviceId = await _storage.getDeviceId();
       final packageInfo = await PackageInfo.fromPlatform();
+
+      print('[AuthService] Device ID: $deviceId');
+      print('[AuthService] App version: ${packageInfo.version}');
 
       final response = await _api.post(
         ApiEndpoints.login,
@@ -117,9 +142,11 @@ class AuthService extends GetxService {
         final data = response.data as Map<String, dynamic>;
 
         // Debug: Print API response structure
-        debugPrint('Login API Response: $data');
+        debugPrint('[AuthService] Login API Response: $data');
 
         final authToken = AuthToken.fromJson(data);
+
+        print('[AuthService] Storing authentication tokens');
 
         // Store tokens
         await _storage.setAccessToken(authToken.accessToken);
@@ -135,11 +162,19 @@ class AuthService extends GetxService {
         currentObserver.value = authToken.observer;
         isAuthenticated.value = true;
 
+        print('[AuthService] ✅ Login successful');
+        print('[AuthService] Observer: ${authToken.observer.name}');
+        print('[AuthService] Clinic: ${authToken.observer.clinicName}');
+
         return AuthResult.success();
       }
 
+      print('[AuthService] ❌ Login failed: Non-200 status code');
       return AuthResult.failure('Login failed');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('[AuthService] ❌ Login error: $e');
+      print('[AuthService] Stack trace: $stackTrace');
+
       if (e is ApiException) {
         return AuthResult.failure(e.message);
       }
@@ -149,11 +184,14 @@ class AuthService extends GetxService {
 
   /// Authenticate with biometrics
   Future<AuthResult> authenticateWithBiometrics() async {
-    if (!biometricsAvailable.value || !biometricsEnabled.value) {
-      return AuthResult.failure('Biometrics not available');
-    }
-
     try {
+      print('[AuthService] 🔐 Biometric authentication attempt');
+
+      if (!biometricsAvailable.value || !biometricsEnabled.value) {
+        print('[AuthService] ❌ Biometrics not available or not enabled');
+        return AuthResult.failure('Biometrics not available');
+      }
+
       final authenticated = await _localAuth.authenticate(
         localizedReason: 'Authenticate to access VetSync',
         options: const AuthenticationOptions(
@@ -163,16 +201,22 @@ class AuthService extends GetxService {
       );
 
       if (authenticated) {
+        print('[AuthService] ✅ Biometric authentication successful');
         // Check if we have valid tokens
         final hasValidSession = await checkAuthStatus();
         if (hasValidSession) {
+          print('[AuthService] ✅ Valid session found');
           return AuthResult.success();
         }
+        print('[AuthService] ❌ Session expired');
         return AuthResult.failure('Session expired. Please login again.');
       }
 
+      print('[AuthService] ❌ Biometric authentication failed');
       return AuthResult.failure('Biometric authentication failed');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('[AuthService] ❌ Biometric error: $e');
+      print('[AuthService] Stack trace: $stackTrace');
       return AuthResult.failure('Biometric error: ${e.toString()}');
     }
   }
@@ -186,8 +230,13 @@ class AuthService extends GetxService {
   /// Refresh access token
   Future<bool> _refreshToken() async {
     try {
+      print('[AuthService] 🔄 Attempting token refresh');
+
       final refreshToken = await _storage.getRefreshToken();
-      if (refreshToken == null) return false;
+      if (refreshToken == null) {
+        print('[AuthService] ❌ No refresh token available');
+        return false;
+      }
 
       final response = await _api.post(
         ApiEndpoints.refresh,
@@ -209,27 +258,46 @@ class AuthService extends GetxService {
           await _storage.setTokenExpiry(expiry);
         }
 
+        print('[AuthService] ✅ Token refreshed successfully');
         return true;
       }
-    } catch (e) {
-      print('Token refresh error: $e');
+
+      print('[AuthService] ❌ Token refresh failed: Non-200 status');
+      return false;
+    } catch (e, stackTrace) {
+      print('[AuthService] ❌ Token refresh error: $e');
+      print('[AuthService] Stack trace: $stackTrace');
+      return false;
     }
-    return false;
   }
 
   /// Logout
   Future<void> logout() async {
     try {
-      // Notify server (best effort)
-      await _api.post(ApiEndpoints.logout);
-    } catch (e) {
-      // Ignore errors
-    }
+      print('[AuthService] 🚪 Logging out');
 
-    // Clear local auth data
-    await _storage.clearAuth();
-    currentObserver.value = null;
-    isAuthenticated.value = false;
+      // Notify server (best effort)
+      try {
+        await _api.post(ApiEndpoints.logout);
+        print('[AuthService] ✅ Server notified of logout');
+      } catch (e) {
+        print('[AuthService] ⚠️ Failed to notify server of logout (ignoring): $e');
+      }
+
+      // Clear local auth data
+      await _storage.clearAuth();
+      currentObserver.value = null;
+      isAuthenticated.value = false;
+
+      print('[AuthService] ✅ Logout complete');
+    } catch (e, stackTrace) {
+      print('[AuthService] ❌ Error during logout: $e');
+      print('[AuthService] Stack trace: $stackTrace');
+      // Still clear local data even on error
+      await _storage.clearAuth();
+      currentObserver.value = null;
+      isAuthenticated.value = false;
+    }
   }
 
   /// Get current observer ID

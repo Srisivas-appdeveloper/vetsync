@@ -391,14 +391,14 @@ class _CollarCard extends StatelessWidget {
   }
 
   Widget _buildSignalIndicator() {
-    final color = _getSignalColor();
+    final color = _getRssiColor();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.signal_cellular_alt, size: 14, color: color),
         const SizedBox(width: 4),
         Text(
-          collar.signalStrength.displayName,
+          '${collar.rssi} dBm',
           style: AppTypography.labelSmall.copyWith(color: color),
         ),
       ],
@@ -425,16 +425,15 @@ class _CollarCard extends StatelessWidget {
     );
   }
 
-  Color _getSignalColor() {
-    switch (collar.signalStrength) {
-      case SignalStrength.excellent:
-        return AppColors.success;
-      case SignalStrength.good:
-        return AppColors.primary;
-      case SignalStrength.fair:
-        return AppColors.warning;
-      case SignalStrength.weak:
-        return AppColors.error;
+  Color _getRssiColor() {
+    // RSSI color coding: green > -60, orange > -75, red otherwise
+    // Never gates connection - for display awareness only
+    if (collar.rssi > -60) {
+      return AppColors.success;
+    } else if (collar.rssi > -75) {
+      return AppColors.warning;
+    } else {
+      return AppColors.error;
     }
   }
 }

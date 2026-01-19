@@ -198,21 +198,26 @@ class BatteryResponse extends CollarResponse {
     : super(CollarResponseId.battery);
 
   factory BatteryResponse.fromBytes(Uint8List bytes) {
-    // Structure assumed from context (0xB1 packet)
-    // Let's assume: [ID, Battery%, ChargingStatus, Checksum]
-    //
-    // CRITICAL: 0xB1 is used for BOTH:
-    // 1. Battery RESPONSE (3-4 bytes): [0xB1, Battery%, Charging, Checksum]
-    // 2. Battery DATA PACKET (27+ bytes): Full packet with timestamp, pressure, IMU, etc.
-    //
-    // We must distinguish by length to avoid reading timestamp bytes as battery %
-    if (bytes.length < 3 || bytes.length > 10) {
-      throw Exception('Invalid battery response length: ${bytes.length} bytes (expected 3-10)');
+    // Structure matches Python script 'PACKET_TYPE_BATTERY' (0xB1)
+    // Structure: [ID(1), Timestamp(4), Batt_mV(2), Batt_Pct(1), Current(2), Charging(1), Checksum(2)? or Padding]
+    // Python expects: len(data) == 12
+    // byte 0: ptype (0xB1)
+    // byte 1-4: timestamp
+    // byte 5-6: batt_mv
+    // byte 7: batt_pct
+    // byte 8-9: current
+    // byte 10: charging
+
+    if (bytes.length < 11) {
+      // Allow 11-12 bytes
+      throw Exception(
+        'Invalid battery response length: ${bytes.length} bytes (expected 12)',
+      );
     }
 
     return BatteryResponse(
-      batteryPercent: bytes[1],
-      isCharging: bytes.length > 2 ? bytes[2] == 1 : false,
+      batteryPercent: bytes[7],
+      isCharging: bytes[10] == 1,
     );
   }
 }

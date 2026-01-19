@@ -63,12 +63,20 @@ class _SurgeryPageState extends State<SurgeryPage>
   void _setupDataStream() {
     _dataSubscription = _bleService.vitalsStream.listen((vitals) {
       setState(() {
-        // Add to history (keep last 60 data points for trend)
-        _heartRateHistory.add(vitals.heartRateBpm.toDouble());
-        _respRateHistory.add(vitals.respiratoryRateBpm.toDouble());
+        // Only add to history when confidence is high enough (use gated values)
+        // This ensures trend charts only show reliable data
+        final displayHR = vitals.displayHR;
+        final displayRR = vitals.displayRR;
 
-        if (_heartRateHistory.length > 60) _heartRateHistory.removeAt(0);
-        if (_respRateHistory.length > 60) _respRateHistory.removeAt(0);
+        if (displayHR != null) {
+          _heartRateHistory.add(displayHR.toDouble());
+          if (_heartRateHistory.length > 60) _heartRateHistory.removeAt(0);
+        }
+
+        if (displayRR != null) {
+          _respRateHistory.add(displayRR.toDouble());
+          if (_respRateHistory.length > 60) _respRateHistory.removeAt(0);
+        }
       });
     });
   }
@@ -304,44 +312,52 @@ class _SurgeryPageState extends State<SurgeryPage>
         final animal = _sessionController.currentAnimal.value;
         final ranges = animal?.vitalRanges;
 
+        // Use confidence-gated display values
+        final displayHR = vitals?.displayHR;
+        final displayRR = vitals?.displayRR;
+        final displayTemp = vitals?.displayTemperature;
+
         return Row(
           children: [
-            // Heart Rate
+            // Heart Rate - show "Analyzing..." when confidence too low
             Expanded(
               child: _VitalDisplay(
                 label: 'Heart Rate',
-                value: vitals?.heartRateBpm ?? 0,
+                value: displayHR?.toDouble() ?? 0,
                 unit: 'bpm',
                 icon: Icons.favorite,
                 color: AppColors.error,
                 range: ranges?.heartRate,
+                showAnalyzing: displayHR == null && vitals != null,
               ),
             ),
             const SizedBox(width: 12),
 
-            // Respiratory Rate
+            // Respiratory Rate - show "Analyzing..." when confidence too low
             Expanded(
               child: _VitalDisplay(
                 label: 'Resp Rate',
-                value: vitals?.respiratoryRateBpm ?? 0,
+                value: displayRR?.toDouble() ?? 0,
                 unit: 'brpm',
                 icon: Icons.air,
                 color: AppColors.info,
                 range: ranges?.respiratoryRate,
+                showAnalyzing: displayRR == null && vitals != null,
               ),
             ),
             const SizedBox(width: 12),
 
-            // Temperature
+            // Temperature - show "--" when invalid
             Expanded(
               child: _VitalDisplay(
                 label: 'Temperature',
-                value: vitals?.temperatureC ?? 0,
+                value: displayTemp ?? 0,
                 unit: '°C',
                 icon: Icons.thermostat,
                 color: AppColors.warning,
                 range: ranges?.temperature,
                 isDecimal: true,
+                showAnalyzing: false, // Temperature uses "--" not "Analyzing..."
               ),
             ),
           ],
@@ -558,14 +574,18 @@ class _SurgeryPageState extends State<SurgeryPage>
     );
   }
 
-  void _quickAnnotation(AnnotationCategory category, String type) {
-    _sessionController.addAnnotation(category: category, type: type);
+  void _quickAnnotation(AnnotationCategory category, String type) async {
+    print('[Surgery] 📝 Quick annotation: $type in category: $category');
+
+    await _sessionController.addAnnotation(category: category, type: type);
 
     Get.snackbar(
       'Annotation Added',
       '${category.emoji} $type',
       snackPosition: SnackPosition.TOP,
       duration: const Duration(seconds: 2),
+      backgroundColor: Colors.green[100],
+      colorText: Colors.green[900],
     );
   }
 
@@ -627,6 +647,7 @@ class _VitalDisplay extends StatelessWidget {
   final Color color;
   final VitalRange? range;
   final bool isDecimal;
+  final bool showAnalyzing;
 
   const _VitalDisplay({
     required this.label,
@@ -636,6 +657,7 @@ class _VitalDisplay extends StatelessWidget {
     required this.color,
     this.range,
     this.isDecimal = false,
+    this.showAnalyzing = false,
   });
 
   /// Check if value is valid (not placeholder/invalid)
@@ -692,27 +714,30 @@ class _VitalDisplay extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                  _isValidValue
-                      ? (isDecimal ? value.toStringAsFixed(1) : value.toString())
-                      : '--',
+                  showAnalyzing
+                      ? 'Analyzing...'
+                      : (_isValidValue
+                          ? (isDecimal ? value.toStringAsFixed(1) : value.toString())
+                          : '--'),
                   style: TextStyle(
                     fontFamily: AppTypography.fontFamily,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: displayColor,
+                    fontSize: showAnalyzing ? 14 : 20,
+                    fontWeight: showAnalyzing ? FontWeight.normal : FontWeight.bold,
+                    color: showAnalyzing ? displayColor.withOpacity(0.7) : displayColor,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
               ),
-              const SizedBox(width: 2),
-              Flexible(
-                child: Text(
-                  unit,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: displayColor,
-                    fontSize: 12,
-                  ),
+              if (!showAnalyzing) const SizedBox(width: 2),
+              if (!showAnalyzing)
+                Flexible(
+                  child: Text(
+                    unit,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: displayColor,
+                      fontSize: 12,
+                    ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
