@@ -25,6 +25,38 @@ class _PreSurgeryPageState extends State<PreSurgeryPage> {
     super.initState();
     sessionController = Get.find<SessionController>();
 
+    // Debug logging
+    print('[PreSurgery] ========================================');
+    print('[PreSurgery] INIT STATE');
+    print('[PreSurgery] SessionController session ID: ${sessionController.currentSession.value?.id ?? "NULL"}');
+
+    // Get session from navigation arguments if available (for reference)
+    final passedSession = Get.arguments as Session?;
+    if (passedSession != null) {
+      print('[PreSurgery] Passed session ID: ${passedSession.id}');
+
+      // ALWAYS trust the SessionController session, only update if passed session is better
+      if (passedSession.id.isNotEmpty &&
+          sessionController.currentSession.value?.id != passedSession.id) {
+        print('[PreSurgery] ✅ Updating session from navigation: ${passedSession.id}');
+        sessionController.currentSession.value = passedSession;
+      } else if (passedSession.id.isEmpty) {
+        print('[PreSurgery] ⚠️ WARNING: Passed session has EMPTY ID - ignoring it');
+        print('[PreSurgery] ⚠️ Keeping SessionController session: ${sessionController.currentSession.value?.id}');
+      }
+    }
+
+    // Final validation
+    final finalSessionId = sessionController.currentSession.value?.id;
+    if (finalSessionId == null || finalSessionId.isEmpty) {
+      print('[PreSurgery] ❌ CRITICAL: No valid session ID available!');
+      print('[PreSurgery] Session object: ${sessionController.currentSession.value}');
+    } else {
+      print('[PreSurgery] ✅ Using session ID: $finalSessionId');
+    }
+
+    print('[PreSurgery] ========================================');
+
     // Load baseline data when entering pre-surgery phase
     // This ensures baseline is available even if navigating from other routes
     WidgetsBinding.instance.addPostFrameCallback((_) {

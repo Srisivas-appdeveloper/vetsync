@@ -41,6 +41,12 @@ class AnnotationRepository {
       print('[AnnotationRepo] Type: $type');
       print('[AnnotationRepo] Description: $description');
 
+      // Validate session ID is not empty
+      if (sessionId.isEmpty) {
+        print('[AnnotationRepo] ❌ ERROR: Session ID is EMPTY! Cannot create annotation.');
+        throw Exception('Cannot create annotation with empty session ID');
+      }
+
       final annotationId = _uuid.v4();
 
       final annotation = Annotation(

@@ -61,7 +61,9 @@ class SessionRepository {
       print('  - position: ${initialPosition?.value}');
       print('  - anxiety: ${initialAnxiety?.value}');
       print('  - verySick: $verySick');
-      print('  - notes: ${initialNotes?.substring(0, initialNotes.length > 50 ? 50 : initialNotes.length)}${(initialNotes?.length ?? 0) > 50 ? '...' : ''}');
+      print(
+        '  - notes: ${initialNotes?.substring(0, initialNotes.length > 50 ? 50 : initialNotes.length)}${(initialNotes?.length ?? 0) > 50 ? '...' : ''}',
+      );
 
       // Save to local database
       await _database.db.insertSession(
@@ -107,7 +109,9 @@ class SessionRepository {
           print('[SessionRepo] Response: ${jsonEncode(response.data)}');
 
           // Extract session data from nested 'data' field if present
-          final sessionData = response.data is Map<String, dynamic> && response.data.containsKey('data')
+          final sessionData =
+              response.data is Map<String, dynamic> &&
+                  response.data.containsKey('data')
               ? response.data['data'] as Map<String, dynamic>
               : response.data as Map<String, dynamic>;
 
@@ -137,7 +141,9 @@ class SessionRepository {
       try {
         final response = await _api.get(ApiEndpoints.session(id));
         // Extract session data from nested 'data' field if present
-        final sessionData = response.data is Map<String, dynamic> && response.data.containsKey('data')
+        final sessionData =
+            response.data is Map<String, dynamic> &&
+                response.data.containsKey('data')
             ? response.data['data'] as Map<String, dynamic>
             : response.data as Map<String, dynamic>;
         return Session.fromJson(sessionData);
@@ -342,7 +348,9 @@ class SessionRepository {
       data: {'code': code},
     );
     // Extract session data from nested 'data' field if present
-    final sessionData = response.data is Map<String, dynamic> && response.data.containsKey('data')
+    final sessionData =
+        response.data is Map<String, dynamic> &&
+            response.data.containsKey('data')
         ? response.data['data'] as Map<String, dynamic>
         : response.data as Map<String, dynamic>;
     return Session.fromJson(sessionData);

@@ -25,8 +25,10 @@ class BaselineController extends GetxController {
   Timer? _timer;
   final RxInt remainingSeconds = AppConfig.baselineDurationSeconds.obs;
   final RxInt elapsedSeconds = 0.obs;
-  int _targetDurationSeconds = AppConfig.baselineDurationSeconds; // Dynamic target that updates on extension
-  DateTime? _lastExtensionTime; // Track when we last extended to prevent repeated snackbars
+  int _targetDurationSeconds = AppConfig
+      .baselineDurationSeconds; // Dynamic target that updates on extension
+  DateTime?
+  _lastExtensionTime; // Track when we last extended to prevent repeated snackbars
 
   // Quality tracking
   final RxInt currentQuality = 0.obs;
@@ -186,7 +188,8 @@ class BaselineController extends GetxController {
     // Reset counters
     elapsedSeconds.value = 0;
     remainingSeconds.value = AppConfig.baselineDurationSeconds;
-    _targetDurationSeconds = AppConfig.baselineDurationSeconds; // Initialize dynamic target
+    _targetDurationSeconds =
+        AppConfig.baselineDurationSeconds; // Initialize dynamic target
     _lastExtensionTime = null; // Reset extension timestamp
     validSamples.value = 0;
     totalSamples.value = 0;
@@ -250,7 +253,8 @@ class BaselineController extends GetxController {
     final validHRCount = heartRateSamples.length;
     if (validHRCount < AppConfig.baselineMinimumHRSamples) {
       canComplete.value = false;
-      statusMessage.value = 'Collecting samples... ($validHRCount/${AppConfig.baselineMinimumHRSamples})';
+      statusMessage.value =
+          'Collecting samples... ($validHRCount/${AppConfig.baselineMinimumHRSamples})';
       return;
     }
 
@@ -261,10 +265,9 @@ class BaselineController extends GetxController {
     currentStability.value = avgQuality.value;
 
     // Can complete if all criteria met
-    canComplete.value = (
-      currentStability.value >= AppConfig.baselineStabilityThreshold * 100 &&
-      hrCV < AppConfig.baselineCVThreshold
-    );
+    canComplete.value =
+        (currentStability.value >= AppConfig.baselineStabilityThreshold * 100 &&
+        hrCV < AppConfig.baselineCVThreshold);
 
     _updateStatusMessage();
   }
@@ -276,7 +279,9 @@ class BaselineController extends GetxController {
     final mean = samples.reduce((a, b) => a + b) / samples.length;
     if (mean == 0) return 1.0;
 
-    final variance = samples.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) / samples.length;
+    final variance =
+        samples.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) /
+        samples.length;
     final stdDev = sqrt(variance);
 
     return stdDev / mean;
@@ -288,7 +293,8 @@ class BaselineController extends GetxController {
     final validHRCount = heartRateSamples.length;
 
     if (validHRCount < AppConfig.baselineMinimumHRSamples) {
-      statusMessage.value = 'Collecting samples... ($validHRCount/${AppConfig.baselineMinimumHRSamples})';
+      statusMessage.value =
+          'Collecting samples... ($validHRCount/${AppConfig.baselineMinimumHRSamples})';
     } else if (stability < 40) {
       statusMessage.value = 'Detecting movement... keep pet still';
     } else if (stability < 60) {
@@ -309,42 +315,39 @@ class BaselineController extends GetxController {
     if (_lastExtensionTime != null) {
       final timeSinceLastExtension = now.difference(_lastExtensionTime!);
       if (timeSinceLastExtension.inSeconds < 5) {
-        print('[Baseline] 🔇 Extension already triggered ${timeSinceLastExtension.inSeconds}s ago, skipping snackbar');
+        print(
+          '[Baseline] 🔇 Extension already triggered ${timeSinceLastExtension.inSeconds}s ago, skipping snackbar',
+        );
         return; // Don't extend again so soon
       }
     }
 
     if (totalDuration >= AppConfig.baselineMaximumSeconds) {
       // Max duration reached, complete anyway
-      print('[Baseline] ⚠️ Maximum duration reached, completing with current quality');
-      Get.snackbar(
-        'Baseline Extended to Maximum',
-        'Completing with current quality (${avgQuality.value.round()}%). Consider repositioning collar for better results.',
-        backgroundColor: AppColors.warning,
-        duration: const Duration(seconds: 5),
+      print(
+        '[Baseline] ⚠️ Maximum duration reached, completing with current quality',
       );
+      print('[Baseline] Quality: ${avgQuality.value.round()}%');
       _completeCollection();
     } else {
       // Add 1 more minute (up to max)
       print('[Baseline] ⏱️ Extending baseline by 1 minute');
 
       // Update the dynamic target duration to next minute boundary
-      final targetDuration = (totalDuration ~/ 60 + 1) * 60; // Round up to next minute
-      _targetDurationSeconds = targetDuration.clamp(0, AppConfig.baselineMaximumSeconds);
+      final targetDuration =
+          (totalDuration ~/ 60 + 1) * 60; // Round up to next minute
+      _targetDurationSeconds = targetDuration.clamp(
+        0,
+        AppConfig.baselineMaximumSeconds,
+      );
       remainingSeconds.value = _targetDurationSeconds - elapsedSeconds.value;
 
       print('[Baseline] New target duration: $_targetDurationSeconds seconds');
       print('[Baseline] Remaining seconds: ${remainingSeconds.value}');
+      print('[Baseline] Signal quality not yet stable, extending collection');
 
       // Update last extension time
       _lastExtensionTime = now;
-
-      Get.snackbar(
-        'Baseline Extended',
-        'Signal quality not yet stable. Collecting up to ${AppConfig.baselineMaximumSeconds ~/ 60} minutes total.',
-        backgroundColor: AppColors.warning,
-        duration: const Duration(seconds: 5),
-      );
     }
   }
 
@@ -477,6 +480,10 @@ class BaselineController extends GetxController {
 
       // Update session controller with baseline data
       _sessionController.baselineData.value = baselineData.value;
+
+      final currentSessionId = _sessionController.currentSession.value?.id;
+      print('[Baseline] 📝 Current session ID before copyWith: $currentSessionId');
+
       _sessionController.currentSession.value = _sessionController
           .currentSession
           .value
@@ -485,10 +492,13 @@ class BaselineController extends GetxController {
             baselineQuality: baselineData.value!.qualityScore,
           );
 
+      print('[Baseline] 📝 Current session ID after copyWith: ${_sessionController.currentSession.value?.id}');
       print('[Baseline] ✅ Baseline saved successfully');
       print('[Baseline] Quality: ${baselineData.value!.qualityScore}%');
       print('[Baseline] HR: ${baselineData.value!.heartRate.mean.round()} bpm');
-      print('[Baseline] RR: ${baselineData.value!.respiratoryRate.mean.round()} brpm');
+      print(
+        '[Baseline] RR: ${baselineData.value!.respiratoryRate.mean.round()} brpm',
+      );
 
       // Navigate to baseline complete
       print('[Baseline] ========================================');
@@ -544,7 +554,8 @@ class BaselineController extends GetxController {
     // 3. Reset counters
     elapsedSeconds.value = 0;
     remainingSeconds.value = AppConfig.baselineDurationSeconds;
-    _targetDurationSeconds = AppConfig.baselineDurationSeconds; // Reset dynamic target
+    _targetDurationSeconds =
+        AppConfig.baselineDurationSeconds; // Reset dynamic target
     _lastExtensionTime = null; // Reset extension timestamp
     validSamples.value = 0;
     totalSamples.value = 0;
@@ -583,14 +594,18 @@ class BaselineController extends GetxController {
           actions: [
             TextButton(
               onPressed: () {
-                print('[Baseline] 📱 Skip cancelled - user chose to collect baseline');
+                print(
+                  '[Baseline] 📱 Skip cancelled - user chose to collect baseline',
+                );
                 Get.back(result: false);
               },
               child: const Text('Collect Baseline'),
             ),
             TextButton(
               onPressed: () {
-                print('[Baseline] ⚠️ Skip confirmed - proceeding without baseline');
+                print(
+                  '[Baseline] ⚠️ Skip confirmed - proceeding without baseline',
+                );
                 Get.back(result: true);
               },
               child: const Text('Skip'),
@@ -602,7 +617,11 @@ class BaselineController extends GetxController {
       if (confirmed == true) {
         print('[Baseline] 🚀 Attempting navigation to pre-surgery...');
         print('[Baseline] Target Route: ${Routes.preSurgery}');
-        Get.toNamed(Routes.preSurgery);
+        print('[Baseline] Session ID: ${_sessionController.currentSession.value?.id}');
+        Get.toNamed(
+          Routes.preSurgery,
+          arguments: _sessionController.currentSession.value,
+        );
         print('[Baseline] ✅ Navigation successful');
       } else {
         print('[Baseline] ℹ️ User chose to continue baseline collection');

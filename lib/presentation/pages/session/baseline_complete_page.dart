@@ -407,10 +407,14 @@ class BaselineCompletePage extends StatelessWidget {
     print('[BaselineComplete] 🚀 PROCEED TO PRE-SURGERY BUTTON PRESSED');
     print('[BaselineComplete] ========================================');
     print('[BaselineComplete] Target Route: ${Routes.preSurgery}');
+    print('[BaselineComplete] Session ID: ${sessionController.currentSession.value?.id}');
 
     try {
       print('[BaselineComplete] 🚀 Attempting navigation to pre-surgery...');
-      Get.offAllNamed(Routes.preSurgery);
+      Get.offAllNamed(
+        Routes.preSurgery,
+        arguments: sessionController.currentSession.value,
+      );
       print('[BaselineComplete] ✅ Navigation successful');
       print('[BaselineComplete] ========================================');
     } catch (e, stackTrace) {

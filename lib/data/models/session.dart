@@ -154,8 +154,17 @@ class Session {
   }
   
   factory Session.fromJson(Map<String, dynamic> json) {
+    final sessionId = json['session_id'] as String? ?? json['id'] as String? ?? '';
+
+    // Validate session ID is not empty
+    if (sessionId.isEmpty) {
+      print('[Session] ❌ ERROR: Attempting to create Session with EMPTY ID!');
+      print('[Session] JSON: $json');
+      throw Exception('Session ID cannot be empty. Check API response format.');
+    }
+
     return Session(
-      id: json['session_id'] as String? ?? json['id'] as String? ?? '',
+      id: sessionId,
       sessionCode: json['session_code'] as String? ?? '',
       animalId: json['animal_id'] as String? ?? '',
       collarId: json['collar_id'] as String? ?? '',

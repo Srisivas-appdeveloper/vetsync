@@ -48,6 +48,10 @@ class SessionController extends GetxController {
   // Annotations
   final RxList<Annotation> sessionAnnotations = <Annotation>[].obs;
 
+  // Track last battery warning level to prevent duplicate annotations
+  int? _lastBatteryWarningLevel;
+  int? _lastBatteryPercentAnnotated; // Track exact battery % to prevent duplicates
+
   // Session duration timer
   Timer? _durationTimer;
   final RxString sessionDuration = '00:00:00'.obs;
@@ -163,21 +167,45 @@ class SessionController extends GetxController {
       return;
     }
 
+    // Determine warning level
+    int? warningLevel;
     if (battery <= 5) {
-      _addSystemAnnotation(
-        'Battery emergency ($battery%) - Swap collar immediately',
-      );
-      Get.snackbar(
-        'Battery Emergency',
-        'Collar battery at $battery%. Swap collar now!',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 10),
-      );
+      warningLevel = 5;
     } else if (battery <= 10) {
-      _addSystemAnnotation('Battery critical ($battery%)');
+      warningLevel = 10;
     } else if (battery <= 20) {
-      _addSystemAnnotation('Battery low ($battery%)');
+      warningLevel = 20;
+    }
+
+    // Only create annotation if warning level changed AND got WORSE (prevents duplicates and recovery re-warnings)
+    // This ensures we only create ONE annotation per threshold crossing in the downward direction
+    if (warningLevel != null && warningLevel != _lastBatteryWarningLevel) {
+      // Only proceed if this is a NEW lower threshold (not recovery)
+      final lastLevel = _lastBatteryWarningLevel;
+      if (lastLevel == null || warningLevel < lastLevel) {
+        print('[Session] 🔋 Creating battery warning annotation: $battery% (level $warningLevel)');
+        _lastBatteryWarningLevel = warningLevel;
+        _lastBatteryPercentAnnotated = battery;
+
+        if (battery <= 5) {
+          _addSystemAnnotation(
+            'Battery emergency ($battery%) - Swap collar immediately',
+          );
+          Get.snackbar(
+            'Battery Emergency',
+            'Collar battery at $battery%. Swap collar now!',
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+            duration: const Duration(seconds: 10),
+          );
+        } else if (battery <= 10) {
+          _addSystemAnnotation('Battery critical ($battery%)');
+        } else if (battery <= 20) {
+          _addSystemAnnotation('Battery low ($battery%)');
+        }
+      } else {
+        print('[Session] 🔋 Skipping annotation - battery recovered (level $warningLevel)');
+      }
     }
   }
 
@@ -229,6 +257,10 @@ class SessionController extends GetxController {
       currentCollar.value = collar;
       sessionStartTime.value = DateTime.now();
 
+      // Reset battery warning tracker for new session
+      _lastBatteryWarningLevel = null;
+      _lastBatteryPercentAnnotated = null;
+
       // Store active session ID
       print('[Session] 💾 Storing session ID and collar ID...');
       await _storage.setActiveSessionId(session.id);
@@ -270,6 +302,12 @@ class SessionController extends GetxController {
     }
 
     final sessionId = currentSession.value!.id;
+
+    // Validate session ID is not empty
+    if (sessionId.isEmpty) {
+      print('[Session] ❌ Cannot load baseline - session ID is empty');
+      return;
+    }
 
     // Check if already in memory
     if (baselineData.value != null) {
@@ -366,21 +404,29 @@ class SessionController extends GetxController {
     print('[Session] 🚀 Starting surgery sequence...');
 
     try {
-      // Update session with surgery details
+      // Update session with surgery details (non-blocking - errors will be queued for retry)
       print('[Session] 📝 Updating surgery details...');
-      await _sessionRepo.updateSurgeryDetails(
-        sessionId: currentSession.value!.id,
-        surgeryType: surgeryType,
-        surgeryReason: surgeryReason,
-        asaStatus: asaStatus,
-      );
+      try {
+        await _sessionRepo.updateSurgeryDetails(
+          sessionId: currentSession.value!.id,
+          surgeryType: surgeryType,
+          surgeryReason: surgeryReason,
+          asaStatus: asaStatus,
+        );
+      } catch (e) {
+        print('[Session] ⚠️ Surgery details update failed (will retry later): $e');
+      }
 
-      // Transition to surgery phase
+      // Transition to surgery phase (non-blocking - errors will be queued for retry)
       print('[Session] 🔄 Updating session phase to SURGERY...');
-      await _sessionRepo.updatePhase(
-        currentSession.value!.id,
-        SessionPhase.surgery,
-      );
+      try {
+        await _sessionRepo.updatePhase(
+          currentSession.value!.id,
+          SessionPhase.surgery,
+        );
+      } catch (e) {
+        print('[Session] ⚠️ Phase update failed (will retry later): $e');
+      }
 
       // 🔥 NEW: Connect to websocket for real-time data streaming
       try {
@@ -544,14 +590,29 @@ class SessionController extends GetxController {
     Map<String, dynamic>? structuredData,
     String? voiceNotePath,
   }) async {
-    if (currentSession.value == null) return;
+    if (currentSession.value == null) {
+      print('[Session] ❌ Cannot add annotation - no active session');
+      return;
+    }
+
+    final sessionId = currentSession.value!.id;
+
+    // Validate session ID is not empty
+    if (sessionId.isEmpty) {
+      print('[Session] ❌ Cannot add annotation - session ID is empty');
+      print('[Session] Session: ${currentSession.value}');
+      return;
+    }
+
+    print('[Session] 📝 Adding annotation to session: $sessionId');
+    print('[Session] Type: $type, Category: ${category.value}');
 
     final elapsedMs = sessionStartTime.value != null
         ? DateTime.now().difference(sessionStartTime.value!).inMilliseconds
         : 0;
 
     final annotation = Annotation(
-      sessionId: currentSession.value!.id,
+      sessionId: sessionId,
       timestampUtc: DateTime.now().toUtc(),
       elapsedMs: elapsedMs,
       phase: currentPhase,
@@ -567,7 +628,9 @@ class SessionController extends GetxController {
     try {
       final savedAnnotation = await _annotationRepo.saveAnnotation(annotation);
       sessionAnnotations.add(savedAnnotation);
+      print('[Session] ✅ Annotation added successfully');
     } catch (e) {
+      print('[Session] ⚠️ Failed to save annotation: $e');
       // Queue for later sync
       sessionAnnotations.add(annotation);
     }
@@ -659,6 +722,8 @@ class SessionController extends GetxController {
     sessionDuration.value = '00:00:00';
     phaseDuration.value = '00:00:00';
     _durationTimer?.cancel();
+    _lastBatteryWarningLevel = null;
+    _lastBatteryPercentAnnotated = null;
   }
 
   /// Cancel session

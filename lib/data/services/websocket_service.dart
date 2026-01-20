@@ -234,7 +234,7 @@ class WebSocketService extends GetxService {
       'timestamp_ms': packet.timestampMs,
       'pressure_raw': packet.pressureRaw,
       'pressure_filtered': packet.pressureFiltered,
-      'temperature_c': packet.temperatureC,
+      'temperature_c': packet.temperatureC.isNaN ? null : packet.temperatureC,
       'battery_percent': packet.batteryPercent,
       'signal_quality': packet.signalQuality,
       'imu_accel': packet.imuAccel,
