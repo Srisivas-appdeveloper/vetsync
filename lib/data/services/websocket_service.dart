@@ -47,29 +47,53 @@ class WebSocketService extends GetxService {
     try {
       final token = await _storage.getAccessToken();
 
-      // Connect to cloud relay WebSocket
+      // Connect to cloud relay WebSocket with timeout
       final uri = Uri.parse('${AppConfig.wsUrl}/session/$sessionId');
 
-      _channel = WebSocketChannel.connect(uri, protocols: ['vetsync-v1']);
+      print('[WebSocket] Attempting connection to: $uri');
 
-      // Send auth message
-      _sendJson({'type': 'auth', 'token': token, 'client_type': 'mobile'});
-
-      // Listen for messages
-      _subscription = _channel!.stream.listen(
-        _onMessage,
-        onError: _onError,
-        onDone: _onDone,
-      );
-
-      // Start ping timer
-      _startPingTimer();
+      // Wrap entire connection process in a timeout
+      await Future.any([
+        Future.delayed(const Duration(seconds: 5)).then((_) {
+          throw TimeoutException('WebSocket connection timeout after 5 seconds');
+        }),
+        _performConnection(uri, token),
+      ]);
 
       connectionState.value = WebSocketState.connected;
+      print('[WebSocket] ✅ Connection established successfully');
     } catch (e) {
       connectionState.value = WebSocketState.error;
+
+      // Clean up channel if it was created
+      try {
+        await _channel?.sink.close();
+        _channel = null;
+      } catch (_) {}
+
+      print('[WebSocket] ❌ Connection failed: $e');
       throw WebSocketException('Failed to connect: ${e.toString()}');
     }
+  }
+
+  Future<void> _performConnection(Uri uri, String? token) async {
+    _channel = WebSocketChannel.connect(uri, protocols: ['vetsync-v1']);
+
+    // Send auth message
+    _sendJson({'type': 'auth', 'token': token, 'client_type': 'mobile'});
+
+    // Listen for messages
+    _subscription = _channel!.stream.listen(
+      _onMessage,
+      onError: _onError,
+      onDone: _onDone,
+    );
+
+    // Start ping timer
+    _startPingTimer();
+
+    // Give connection a moment to establish
+    await Future.delayed(const Duration(milliseconds: 500));
   }
 
   /// Connect directly to laptop (local network)

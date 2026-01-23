@@ -175,16 +175,11 @@ class SessionRepository {
     // Update server
     if (_connectivity.isOnline.value) {
       try {
-        await _api.patch(
+        await _api.put(
           ApiEndpoints.sessionPhase(sessionId),
           data: {
-            'phase': phase.value,
-            if (phase == SessionPhase.surgery)
-              'surgery_started_at': DateTime.now().toIso8601String(),
-            if (phase == SessionPhase.recovery)
-              'surgery_ended_at': DateTime.now().toIso8601String(),
-            if (phase == SessionPhase.completed)
-              'ended_at': DateTime.now().toIso8601String(),
+            'new_phase': phase.value,
+            'timestamp': DateTime.now().toIso8601String(),
           },
         );
       } catch (e) {
