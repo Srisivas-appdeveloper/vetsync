@@ -8,6 +8,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 
 import '../../core/constants/app_config.dart';
 import '../../services/bcg_service.dart';
+import '../../services/dual_upload_service.dart';
 import '../models/models.dart';
 import '../models/collar_protocol.dart';
 import 'collar_stream_parser.dart';
@@ -108,6 +109,9 @@ class BleService extends GetxService {
   // WebSocket service for streaming data to laptop/backend
   WebSocketService? _wsService;
 
+  // Dual upload service for batch uploads to cloud
+  DualUploadService? _dualUploadService;
+
   // Debug counter for vitals emission
   int _vitalCount = 0;
 
@@ -126,6 +130,13 @@ class BleService extends GetxService {
       _wsService = Get.find<WebSocketService>();
     } catch (e) {
       debugPrint('[BLE] WebSocket service not available yet');
+    }
+
+    // Initialize DualUploadService reference
+    try {
+      _dualUploadService = Get.find<DualUploadService>();
+    } catch (e) {
+      debugPrint('[BLE] DualUploadService not available yet');
     }
 
     // Listen to adapter state
@@ -1138,9 +1149,14 @@ class BleService extends GetxService {
       // Emit raw packet to stream
       _dataController.add(legacyPacket);
 
-      // 🔥 NEW: Send to websocket if connected (for laptop/backend streaming)
+      // 🔥 Send to websocket if connected (for laptop/backend streaming)
       if (_wsService?.isConnected == true) {
         _wsService!.sendCollarData(legacyPacket);
+      }
+
+      // 🔥 Send to dual upload service for batch cloud upload
+      if (_dualUploadService != null) {
+        _dualUploadService!.addCollarData(legacyPacket);
       }
     }
   }

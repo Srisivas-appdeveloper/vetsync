@@ -10,6 +10,7 @@ import '../../data/services/websocket_service.dart';
 import '../../data/services/storage_service.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../data/repositories/annotation_repository.dart';
+import '../../services/dual_upload_service.dart';
 
 /// Main controller for session lifecycle
 /// Persists throughout entire session flow
@@ -17,6 +18,7 @@ class SessionController extends GetxController {
   final AuthService _authService = Get.find<AuthService>();
   final BleService _bleService = Get.find<BleService>();
   final WebSocketService _wsService = Get.find<WebSocketService>();
+  final DualUploadService _dualUploadService = Get.find<DualUploadService>();
   final StorageService _storage = Get.find<StorageService>();
   final SessionRepository _sessionRepo = Get.find<SessionRepository>();
   final AnnotationRepository _annotationRepo = Get.find<AnnotationRepository>();
@@ -428,7 +430,7 @@ class SessionController extends GetxController {
         print('[Session] ⚠️ Phase update failed (will retry later): $e');
       }
 
-      // 🔥 NEW: Connect to websocket for real-time data streaming
+      // 🔥 Connect to websocket for real-time data streaming
       try {
         print('[Session] 🔌 Connecting to WebSocket...');
         await _wsService.connectToRelay(sessionId: currentSession.value!.id);
@@ -437,6 +439,19 @@ class SessionController extends GetxController {
         print('[Session] ⚠️ WebSocket connection failed (non-fatal): $e');
         print('[Session] ✓ Continuing without WebSocket (offline mode)');
         // Continue anyway - websocket is optional for offline mode
+      }
+
+      // 🔥 Start dual upload service for batch cloud uploads
+      try {
+        print('[Session] 📤 Starting DualUploadService...');
+        await _dualUploadService.startSession(
+          currentSession.value!.id,
+          'surgery', // Phase
+          'raw', // Mode
+        );
+        print('[Session] ✅ DualUploadService started for batch uploads');
+      } catch (e) {
+        print('[Session] ⚠️ DualUploadService start failed (non-fatal): $e');
       }
 
       // Switch collar to raw mode for calibration
@@ -551,6 +566,15 @@ class SessionController extends GetxController {
     try {
       // endSession takes positional argument
       await _sessionRepo.endSession(currentSession.value!.id);
+
+      // Stop dual upload service and flush remaining data
+      try {
+        print('[Session] 🛑 Stopping DualUploadService...');
+        await _dualUploadService.stopSession();
+        print('[Session] ✅ DualUploadService stopped, all data flushed');
+      } catch (e) {
+        print('[Session] ⚠️ DualUploadService stop failed: $e');
+      }
 
       // Disconnect websocket
       await _wsService.disconnect();

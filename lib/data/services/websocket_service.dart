@@ -48,7 +48,7 @@ class WebSocketService extends GetxService {
       final token = await _storage.getAccessToken();
 
       // Connect to cloud relay WebSocket with timeout
-      final uri = Uri.parse('${AppConfig.wsUrl}/session/$sessionId');
+      final uri = Uri.parse('${AppConfig.wsUrl}/ws/session/$sessionId');
 
       print('[WebSocket] Attempting connection to: $uri');
 
@@ -80,7 +80,9 @@ class WebSocketService extends GetxService {
     _channel = WebSocketChannel.connect(uri, protocols: ['vetsync-v1']);
 
     // Send auth message
-    _sendJson({'type': 'auth', 'token': token, 'client_type': 'mobile'});
+    final authMessage = {'type': 'auth', 'token': token, 'client_type': 'mobile'};
+    print('[WebSocket] 📤 Sending auth message: ${jsonEncode(authMessage)}');
+    _sendJson(authMessage);
 
     // Listen for messages
     _subscription = _channel!.stream.listen(
@@ -252,6 +254,7 @@ class WebSocketService extends GetxService {
     final data = {
       'type': 'collar_data',
       'session_id': _sessionId,
+      'phase': 'monitoring',
       'timestamp': DateTime.now().toIso8601String(),
       'packet_type': packet.packetType,
       'sequence': packet.sequenceNumber,

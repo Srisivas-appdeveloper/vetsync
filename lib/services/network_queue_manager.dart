@@ -35,8 +35,22 @@ class NetworkQueueManager extends GetxService {
   @override
   void onInit() {
     super.onInit();
+    _clearOldQueue(); // Clear old queue items with wrong endpoint
     _startNetworkMonitoring();
     _startPeriodicSync();
+  }
+
+  /// Clear old raw data queue items (migration helper)
+  Future<void> _clearOldQueue() async {
+    try {
+      final db = await _db.database;
+      final deleted = await db.delete('raw_data_sync_queue');
+      if (deleted > 0) {
+        print('[QueueManager] 🗑️ Cleared $deleted old raw data queue items');
+      }
+    } catch (e) {
+      print('[QueueManager] Failed to clear old queue: $e');
+    }
   }
 
   @override
@@ -165,8 +179,8 @@ class NetworkQueueManager extends GetxService {
 
         final headers = Map<String, String>.from(jsonDecode(headersJson));
 
-        // Upload to backend
-        await _apiService.uploadRawDataChunk(
+        // Upload to backend using new endpoint
+        await _apiService.uploadRawCollarData(
           sessionId: sessionId,
           headers: headers,
           data: chunkData,

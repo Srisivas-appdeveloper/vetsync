@@ -51,7 +51,7 @@ class SchemaV3_2_0 {
           FOREIGN KEY (session_id) REFERENCES sessions(session_id),
           FOREIGN KEY (animal_id) REFERENCES animals(animal_id),
           FOREIGN KEY (collar_id) REFERENCES collars(collar_id)
-        )
+        )a
       ''');
 
       await txn.execute('''

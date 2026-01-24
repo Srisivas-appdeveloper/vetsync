@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart' hide Response, FormData, MultipartFile;
 
@@ -146,7 +147,25 @@ class ApiService extends GetxService {
     );
   }
 
-  /// Upload raw data chunk
+  /// Upload raw collar data chunk (MessagePack to S3)
+  Future<Response> uploadRawCollarData({
+    required String sessionId,
+    required Map<String, String> headers,
+    required Uint8List data,
+  }) async {
+    return post(
+      '/sessions/$sessionId/raw-collar-data/upload',
+      data: data,
+      options: Options(
+        headers: {
+          ...headers,
+          'Content-Type': 'application/x-msgpack',
+        },
+      ),
+    );
+  }
+
+  /// Upload raw data chunk (legacy - for offline queue)
   Future<Response> uploadRawDataChunk({
     required String sessionId,
     required Map<String, String> headers,
