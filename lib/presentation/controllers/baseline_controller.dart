@@ -225,18 +225,37 @@ class BaselineController extends GetxController {
       _checkCompletionCriteria();
 
       if (remainingSeconds.value <= 0) {
+        // TEMPORARY: Force complete after 2 minutes
+        // TODO: Uncomment quality-based completion when ready for production
+        _completeCollection();
+
+        /* ========== COMMENTED OUT FOR QUICK TESTING - UNCOMMENT WHEN READY ==========
         // Minimum duration reached
         if (canComplete.value) {
           _completeCollection();
         } else {
           _extendBaseline();
         }
+        ========== END COMMENTED SECTION ========== */
       }
     });
   }
 
   /// Check if baseline can complete early
   void _checkCompletionCriteria() {
+    // TEMPORARY: Force completion after 2 minutes without quality checks
+    // TODO: Uncomment quality checks below when ready for production
+    if (elapsedSeconds.value < AppConfig.baselineMinimumSeconds) {
+      canComplete.value = false;
+      statusMessage.value = 'Collecting baseline data...';
+      return;
+    }
+
+    // Force completion after 2 minutes
+    canComplete.value = true;
+    statusMessage.value = 'Ready to complete';
+
+    /* ========== COMMENTED OUT FOR QUICK TESTING - UNCOMMENT WHEN READY ==========
     // Can complete if:
     // 1. At least minimum duration elapsed
     // 2. Enough valid HR measurements
@@ -270,6 +289,7 @@ class BaselineController extends GetxController {
         hrCV < AppConfig.baselineCVThreshold);
 
     _updateStatusMessage();
+    ========== END COMMENTED SECTION ========== */
   }
 
   /// Calculate coefficient of variation

@@ -168,26 +168,43 @@ class SessionRepository {
   }
 
   /// Update session phase
-  Future<void> updatePhase(String sessionId, SessionPhase phase) async {
+  Future<void> updatePhase(
+    String sessionId,
+    SessionPhase phase, {
+    int? collarTimestampMs,
+    String? notes,
+  }) async {
     // Update local
     await _database.db.updateSessionPhase(sessionId, phase.value);
 
-    // Update server
+    // Update server with FIX 2: Include collar timestamp for Phase-1 safety
     if (_connectivity.isOnline.value) {
       try {
+        final phaseData = {
+          'new_phase': phase.value,
+          'timestamp': DateTime.now().toIso8601String(),
+          if (collarTimestampMs != null)
+            'collar_timestamp_ms': collarTimestampMs,
+          if (notes != null) 'notes': notes,
+        };
+
+        print(
+            '[SessionRepo] 📤 Updating phase to ${phase.value} with collar_ts: $collarTimestampMs');
+
         await _api.put(
           ApiEndpoints.sessionPhase(sessionId),
-          data: {
-            'new_phase': phase.value,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
+          data: phaseData,
         );
       } catch (e) {
         await _sync.queueForSync(
           entityType: 'session',
           entityId: sessionId,
           action: 'update',
-          data: {'phase': phase.value},
+          data: {
+            'phase': phase.value,
+            if (collarTimestampMs != null)
+              'collar_timestamp_ms': collarTimestampMs,
+          },
           priority: 1,
         );
       }

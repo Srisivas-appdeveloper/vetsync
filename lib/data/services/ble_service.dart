@@ -57,6 +57,25 @@ class BleService extends GetxService {
   // Current mode
   final Rx<FirmwareMode> currentMode = FirmwareMode.filtered.obs;
 
+  // Latest collar timestamp (for Phase-1 safety FIX 2)
+  final RxInt latestCollarTimestampMs = 0.obs;
+
+  // Packet sequence counter (for Phase-1 safety FIX 3)
+  int _packetSequenceNumber = 0;
+  int _lastSequenceNumber = -1; // Track last sequence to detect gaps (FIX 3.4)
+  int _totalPacketLoss = 0; // Track total packet loss for session (FIX 3.4)
+
+  // Collar boot time tracking (for Phase-1 safety FIX 4)
+  bool _hasRecordedBootTime = false;
+  int? _collarBootTimeUtcMs;
+
+  // Callback for collar boot time calculation
+  Function({
+    required int collarBootTimeUtcMs,
+    required int firstPacketCollarTs,
+    required int firstPacketMobileUtc,
+  })? onCollarBootTimeCalculated;
+
   // Reconnection
   int _reconnectAttempts = 0;
   Timer? _reconnectTimer;
@@ -969,6 +988,19 @@ class BleService extends GetxService {
     _dataCharacteristic = null;
     _commandCharacteristic = null;
     connectedCollar.value = null;
+
+    // Reset boot time tracking on disconnect (FIX 4)
+    _hasRecordedBootTime = false;
+    _collarBootTimeUtcMs = null;
+
+    // Reset sequence tracking on disconnect (FIX 3.4)
+    if (_totalPacketLoss > 0) {
+      print('[BLE] 📊 Session packet loss summary: $_totalPacketLoss packets lost');
+    }
+    _packetSequenceNumber = 0;
+    _lastSequenceNumber = -1;
+    _totalPacketLoss = 0;
+
     connectionState.value = BleConnectionState.disconnected;
     isDataStreaming.value = false;
 
@@ -1125,10 +1157,24 @@ class BleService extends GetxService {
 
       // Create legacy CollarDataPacket if needed for dataStream
       // We map the validated packet to the legacy DTO structure
+      // FIX 3: Generate sequence number for Phase-1 safety packet loss detection
+      _packetSequenceNumber++;
+
+      // FIX 3.4: Detect sequence gaps for packet loss logging
+      if (_lastSequenceNumber >= 0) {
+        final expectedSequence = _lastSequenceNumber + 1;
+        if (_packetSequenceNumber != expectedSequence) {
+          final gap = _packetSequenceNumber - expectedSequence;
+          _totalPacketLoss += gap;
+          print('[BLE] ⚠️ Sequence gap detected! Expected: $expectedSequence, Got: $_packetSequenceNumber, Lost: $gap packets');
+          print('[BLE] 📊 Total packet loss this session: $_totalPacketLoss');
+        }
+      }
+      _lastSequenceNumber = _packetSequenceNumber;
+
       final legacyPacket = CollarDataPacket(
         packetType: packet.packetType,
-        sequenceNumber:
-            0, // Not available in new validated packet structure yet
+        sequenceNumber: _packetSequenceNumber,
         timestampMs:
             packet.timestampUs ~/
             1000, // Convert us to ms for legacy compatibility
@@ -1145,6 +1191,28 @@ class BleService extends GetxService {
         imuGyro: [packet.gyroX, packet.gyroY, packet.gyroZ],
         receivedAt: packet.receivedAt,
       );
+
+      // Track latest collar timestamp (FIX 2: Phase-1 safety)
+      latestCollarTimestampMs.value = legacyPacket.timestampMs;
+
+      // FIX 4: Capture collar boot time on first packet (Phase-1 safety)
+      if (!_hasRecordedBootTime && legacyPacket.timestampMs > 0) {
+        final now = DateTime.now();
+        _collarBootTimeUtcMs = now.millisecondsSinceEpoch - legacyPacket.timestampMs;
+        _hasRecordedBootTime = true;
+
+        print('[BLE] 🕐 Collar boot time captured:');
+        print('[BLE]   - First packet collar_ts: ${legacyPacket.timestampMs} ms');
+        print('[BLE]   - Mobile UTC: ${now.millisecondsSinceEpoch} ms');
+        print('[BLE]   - Calculated boot time: $_collarBootTimeUtcMs ms');
+
+        // Notify listeners about boot time (will be picked up by session controller)
+        onCollarBootTimeCalculated?.call(
+          collarBootTimeUtcMs: _collarBootTimeUtcMs!,
+          firstPacketCollarTs: legacyPacket.timestampMs,
+          firstPacketMobileUtc: now.millisecondsSinceEpoch,
+        );
+      }
 
       // Emit raw packet to stream
       _dataController.add(legacyPacket);

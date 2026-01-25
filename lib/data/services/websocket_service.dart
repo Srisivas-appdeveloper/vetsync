@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -34,6 +35,11 @@ class WebSocketService extends GetxService {
 
   // Packet counter for throttled logging
   int _packetsSent = 0;
+
+  // FIX 5: Laptop ACK tracking for Phase-1 safety
+  final Rx<int> laptopPacketsConfirmed = 0.obs;
+  final Rx<int> laptopPacketLoss = 0.obs;
+  DateTime? _lastAckReceived;
 
   /// Connect to cloud relay server
   Future<void> connectToRelay({required String sessionId}) async {
@@ -144,6 +150,12 @@ class WebSocketService extends GetxService {
     _sessionId = null;
     _laptopUrl = null;
     connectionState.value = WebSocketState.disconnected;
+
+    // FIX 5: Reset ACK tracking on disconnect
+    _packetsSent = 0;
+    laptopPacketsConfirmed.value = 0;
+    laptopPacketLoss.value = 0;
+    _lastAckReceived = null;
   }
 
   /// Handle incoming message
@@ -174,12 +186,95 @@ class WebSocketService extends GetxService {
           // Keep-alive response
           break;
 
+        case 'ACK':
+        case 'ack':
+          // FIX 5: Handle laptop ACK for Phase-1 safety
+          _handleLaptopAck(data);
+          break;
+
         case 'error':
           print('WebSocket error: ${data['message']}');
           break;
       }
     } catch (e) {
       print('Error parsing WebSocket message: $e');
+    }
+  }
+
+  /// FIX 5: Handle laptop ACK for Phase-1 safety
+  void _handleLaptopAck(Map<String, dynamic> data) {
+    try {
+      _lastAckReceived = DateTime.now();
+
+      final packetsReceived = data['packetsReceived'] as int? ??
+                             data['packets_received'] as int? ?? 0;
+      final packetLossDetected = data['packetLossDetected'] as int? ??
+                                data['packet_loss_detected'] as int? ?? 0;
+      final lastSequenceNum = data['lastSequenceNum'] as int? ??
+                             data['last_sequence_num'] as int? ?? 0;
+
+      final previousLoss = laptopPacketLoss.value;
+      laptopPacketsConfirmed.value = packetsReceived;
+      laptopPacketLoss.value = packetLossDetected;
+
+      // FIX 3.5: Alert on new packet loss
+      final newLoss = packetLossDetected - previousLoss;
+      if (newLoss > 0) {
+        print('[WS] 🔴 NEW PACKET LOSS DETECTED: $newLoss packets');
+        print('[WS]   - Total loss: $packetLossDetected');
+        print('[WS]   - Last sequence received: $lastSequenceNum');
+
+        // Alert user if loss exceeds threshold
+        if (newLoss >= 10) {
+          _showPacketLossWarning(newLoss, packetLossDetected);
+        }
+      }
+
+      // Log ACK periodically (every 1000th packet to avoid spam)
+      if (packetsReceived % 1000 == 0) {
+        print('[WS] 📬 Laptop ACK: $packetsReceived packets confirmed');
+        if (packetLossDetected > 0) {
+          print('[WS]   - Total packet loss: $packetLossDetected');
+        }
+      }
+    } catch (e) {
+      print('[WS] Error handling laptop ACK: $e');
+    }
+  }
+
+  /// FIX 3.5: Show packet loss warning to user
+  void _showPacketLossWarning(int newLoss, int totalLoss) {
+    try {
+      String severity;
+      Color backgroundColor;
+      Color textColor;
+
+      if (newLoss >= 100) {
+        severity = 'Critical';
+        backgroundColor = Colors.red[100]!;
+        textColor = Colors.red[900]!;
+      } else if (newLoss >= 50) {
+        severity = 'High';
+        backgroundColor = Colors.orange[100]!;
+        textColor = Colors.orange[900]!;
+      } else {
+        severity = 'Moderate';
+        backgroundColor = Colors.amber[100]!;
+        textColor = Colors.amber[900]!;
+      }
+
+      Get.snackbar(
+        '$severity Packet Loss Detected',
+        '$newLoss packets lost in transit to laptop (Total: $totalLoss)',
+        duration: const Duration(seconds: 5),
+        backgroundColor: backgroundColor,
+        colorText: textColor,
+        snackPosition: SnackPosition.TOP,
+      );
+
+      print('[WS] 📢 Packet loss warning shown to user: $severity - $newLoss packets');
+    } catch (e) {
+      print('[WS] Failed to show packet loss warning: $e');
     }
   }
 
