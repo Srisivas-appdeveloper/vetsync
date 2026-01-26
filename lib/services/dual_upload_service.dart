@@ -21,6 +21,13 @@ class DualUploadService extends GetxService {
   String _currentPhase = 'monitoring'; // baseline, pre_surgery, surgery, recovery, monitoring
   String _currentMode = 'raw'; // filtered, raw
 
+  // =========================================================================
+  // FIX-003: MODE ENFORCEMENT STATE (Authoritative Spec)
+  // =========================================================================
+  /// HARD GATE: Vitals upload permission flag
+  /// DEFAULT: BLOCKED until explicitly enabled
+  bool _vitalsUploadPermitted = false;
+
   // Raw data buffers (MessagePack)
   final List<Map<String, dynamic>> _rawDataBuffer = [];
   static const int _rawDataBatchSize = 100; // 100 packets per batch (~1 second at 100Hz)
@@ -45,6 +52,51 @@ class DualUploadService extends GetxService {
   void onClose() {
     stopSession();
     super.onClose();
+  }
+
+  // =========================================================================
+  // FIX-003: CONFIGURATION METHOD (Authoritative Spec)
+  // Called ONLY by SessionController during phase transitions
+  // =========================================================================
+  void configure({
+    required String sessionId,
+    required String phase,
+    required String mode,
+    required bool vitalsUploadPermitted,
+  }) {
+    _sessionId = sessionId;
+    _currentPhase = phase;
+    _currentMode = mode;
+    _vitalsUploadPermitted = vitalsUploadPermitted;
+
+    print('[DualUpload] Configured: phase=$phase, mode=$mode, vitals=${vitalsUploadPermitted ? "PERMITTED" : "BLOCKED"}');
+  }
+
+  // =========================================================================
+  // FIX-004: FLUSH AND BLOCK (Authoritative Spec)
+  // Called BEFORE surgery mode transition to clear any pending vitals
+  // =========================================================================
+  Future<void> flushAndBlock() async {
+    print('[DualUpload] === FLUSH AND BLOCK ===');
+
+    // STEP 1: Block further vitals buffering
+    _vitalsUploadPermitted = false;
+
+    // STEP 2: Upload any remaining pre-surgery vitals
+    if (_vitalsBuffer.isNotEmpty && _currentPhase != 'surgery') {
+      print('[DualUpload] Flushing ${_vitalsBuffer.length} pre-surgery vitals');
+      await _uploadVitalsBatch();
+    }
+
+    // STEP 3: Clear buffer (discard anything that couldn't upload)
+    final discardCount = _vitalsBuffer.length;
+    _vitalsBuffer.clear();
+
+    if (discardCount > 0) {
+      print('[DualUpload] WARNING: Discarded $discardCount vitals that could not be uploaded');
+    }
+
+    print('[DualUpload] Vitals buffer cleared and blocked');
   }
 
   /// Start a new session with dual upload
@@ -170,6 +222,26 @@ class DualUploadService extends GetxService {
       return;
     }
 
+    // =========================================================================
+    // FIX-003: HARD GATE - Vitals buffering permission check (Authoritative Spec)
+    // =========================================================================
+    if (!_vitalsUploadPermitted) {
+      // Silent discard - this is expected behavior during surgery
+      return;
+    }
+
+    // SECONDARY GATE: Mode check (defense-in-depth)
+    if (_currentMode == 'raw') {
+      assert(false, 'FATAL: Vitals buffered in raw mode. Mode enforcement failed.');
+      return;
+    }
+
+    // TERTIARY GATE: Phase check (defense-in-depth)
+    if (_currentPhase == 'surgery') {
+      assert(false, 'FATAL: Vitals buffered during surgery. Phase enforcement failed.');
+      return;
+    }
+
     _vitalsBuffer.add(vitals);
 
     print('[DualUpload] 📊 Vitals buffered: ${_vitalsBuffer.length}/$_vitalsBatchSize records');
@@ -217,9 +289,15 @@ class DualUploadService extends GetxService {
 
     // Upload vitals every 5 seconds
     _vitalsUploadTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (_vitalsBuffer.isNotEmpty) {
-        _uploadVitalsBatch();
+      // =====================================================================
+      // FIX-003: VITALS UPLOAD GATE (Authoritative Spec)
+      // =====================================================================
+      if (_vitalsUploadPermitted && _currentPhase != 'surgery') {
+        if (_vitalsBuffer.isNotEmpty) {
+          _uploadVitalsBatch();
+        }
       }
+      // Raw data upload always proceeds (for disaster recovery)
     });
   }
 
@@ -339,7 +417,21 @@ class DualUploadService extends GetxService {
 
   /// Upload vitals batch (JSON to PostgreSQL)
   Future<void> _uploadVitalsBatch() async {
+    // =========================================================================
+    // FIX-003: VITALS UPLOAD BATCH PRE-CONDITION CHECK (Authoritative Spec)
+    // =========================================================================
+    if (!_vitalsUploadPermitted) {
+      print('[DualUpload] Vitals upload skipped: not permitted');
+      return;
+    }
+
     if (_vitalsBuffer.isEmpty || _sessionId == null) return;
+
+    // PHASE ASSERTION (defense-in-depth)
+    assert(
+      _currentPhase != 'surgery',
+      'FATAL: Vitals upload attempted during surgery phase',
+    );
 
     // Take batch from buffer
     final batchSize = _vitalsBuffer.length < _vitalsBatchSize

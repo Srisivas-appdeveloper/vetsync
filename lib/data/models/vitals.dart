@@ -31,7 +31,42 @@ class Vitals {
     this.maxHR,
     this.minRR,
     this.maxRR,
-  });
+  }) {
+    // =========================================================================
+    // FIX-005: INVARIANT ENFORCEMENT (Authoritative Spec)
+    // =========================================================================
+    // If HR exists, confidence MUST exist
+    if (heartRateBpm > 0) {
+      assert(
+        hrConfidence != null,
+        'INVARIANT VIOLATION (FIX-005): heartRateBpm is set but hrConfidence is null. '
+        'This indicates a BCG processor bug.',
+      );
+    }
+
+    // If RR exists, confidence MUST exist
+    if (respiratoryRateBpm > 0) {
+      assert(
+        rrConfidence != null,
+        'INVARIANT VIOLATION (FIX-005): respiratoryRateBpm is set but rrConfidence is null. '
+        'This indicates a BCG processor bug.',
+      );
+    }
+
+    // Confidence must be in valid range [0, 1]
+    if (hrConfidence != null) {
+      assert(
+        hrConfidence! >= 0.0 && hrConfidence! <= 1.0,
+        'INVARIANT VIOLATION (FIX-005): hrConfidence out of range [0, 1]: $hrConfidence',
+      );
+    }
+    if (rrConfidence != null) {
+      assert(
+        rrConfidence! >= 0.0 && rrConfidence! <= 1.0,
+        'INVARIANT VIOLATION (FIX-005): rrConfidence out of range [0, 1]: $rrConfidence',
+      );
+    }
+  }
 
   /// Check if vitals are valid
   bool get isValid {
@@ -147,13 +182,28 @@ class Vitals {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'heart_rate_bpm': heartRateBpm,
-      'respiratory_rate_bpm': respiratoryRateBpm,
-      'temperature_c': temperatureC,
-      'signal_quality': signalQuality,
+    // =========================================================================
+    // FIX-005: Include confidence fields when vitals present (Authoritative Spec)
+    // =========================================================================
+    final json = <String, dynamic>{
       'timestamp': timestamp.toIso8601String(),
+      'signal_quality': signalQuality,
+      'temperature_c': temperatureC,
     };
+
+    // Heart rate: include BOTH bpm and confidence, or NEITHER
+    if (heartRateBpm > 0) {
+      json['heart_rate_bpm'] = heartRateBpm;
+      json['heart_rate_confidence'] = hrConfidence; // Guaranteed non-null by invariant
+    }
+
+    // Respiratory rate: include BOTH bpm and confidence, or NEITHER
+    if (respiratoryRateBpm > 0) {
+      json['respiratory_rate_bpm'] = respiratoryRateBpm;
+      json['respiratory_rate_confidence'] = rrConfidence; // Guaranteed non-null by invariant
+    }
+
+    return json;
   }
 
   @override

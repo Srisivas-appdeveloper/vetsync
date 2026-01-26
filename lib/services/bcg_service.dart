@@ -30,6 +30,16 @@ class BcgService extends ChangeNotifier {
   int _currentMode =
       BlePacketTypes.modeFiltered; // Default to filtered/standard
 
+  // =========================================================================
+  // FIX-001: MODE ENFORCEMENT (Authoritative Spec)
+  // =========================================================================
+  /// Processing mode state - SINGLE SOURCE OF TRUTH
+  /// When false, ALL processing paths return null unconditionally.
+  bool _processingPermitted = true;
+
+  /// Current operational mode for audit logging
+  String _currentModeString = 'filtered';
+
   // Stream for raw pressure data (waveform visualization)
   final _rawDataController = StreamController<List<int>>.broadcast();
   Stream<List<int>> get rawDataStream => _rawDataController.stream;
@@ -121,6 +131,15 @@ class BcgService extends ChangeNotifier {
   void _processBatch() {
     if (_pressureBatch.isEmpty) return;
 
+    // =========================================================================
+    // FIX-001: HARD GATE - UNCONDITIONAL CHECK (Authoritative Spec)
+    // This check CANNOT be bypassed. It runs before ANY processing logic.
+    // =========================================================================
+    if (!_processingPermitted) {
+      _pressureBatch.clear(); // Discard data when processing disabled
+      return;
+    }
+
     try {
       // Run BCG algorithm on batch
       final result = _algorithm.processSamples(_pressureBatch);
@@ -205,6 +224,47 @@ class BcgService extends ChangeNotifier {
     _lastUpdateTime = null;
 
     notifyListeners();
+  }
+
+  // =========================================================================
+  // FIX-001: HARD GATE - Set Processing Permission (Authoritative Spec)
+  // =========================================================================
+  /// HARD GATE: Set processing permission based on mode
+  /// Called ONLY by SessionController during phase transitions
+  void setProcessingMode({
+    required String mode,
+    required bool processingPermitted,
+  }) {
+    _currentModeString = mode;
+    _processingPermitted = processingPermitted;
+
+    // Audit log for regulatory traceability
+    debugPrint(
+      '[BCGService] Mode set: mode=$mode, processing=${processingPermitted ? "ENABLED" : "DISABLED"}',
+    );
+  }
+
+  /// Legacy pause - DEPRECATED but kept for compatibility
+  @Deprecated('Use setProcessingMode() instead')
+  void pause() {
+    _processingPermitted = false;
+    debugPrint('[BCGService] DEPRECATED pause() called - processing DISABLED');
+  }
+
+  /// Legacy resume - DEPRECATED but kept for compatibility
+  @Deprecated('Use setProcessingMode() instead')
+  void resume() {
+    // Resume ONLY allowed if mode is not 'raw'
+    if (_currentModeString != 'raw') {
+      _processingPermitted = true;
+      debugPrint(
+        '[BCGService] DEPRECATED resume() called - processing ENABLED',
+      );
+    } else {
+      debugPrint(
+        '[BCGService] DEPRECATED resume() called but mode is raw - processing remains DISABLED',
+      );
+    }
   }
 
   /// Reset all state (call on disconnect)

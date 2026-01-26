@@ -141,6 +141,26 @@ class ApiService extends GetxService {
     String sessionId,
     List<Vitals> vitals,
   ) async {
+    // =========================================================================
+    // FIX-006: PRE-TRANSMISSION VALIDATION (Authoritative Spec)
+    // =========================================================================
+    for (final vital in vitals) {
+      // Validate HR/confidence pair
+      if (vital.heartRateBpm > 0 && vital.hrConfidence == null) {
+        throw StateError(
+          'API validation failed: heartRateBpm present but hrConfidence missing. '
+          'This indicates a BCG processor bug.',
+        );
+      }
+      // Validate RR/confidence pair
+      if (vital.respiratoryRateBpm > 0 && vital.rrConfidence == null) {
+        throw StateError(
+          'API validation failed: respiratoryRateBpm present but rrConfidence missing. '
+          'This indicates a BCG processor bug.',
+        );
+      }
+    }
+
     return post(
       '/sessions/$sessionId/vitals/batch',
       data: vitals.map((v) => v.toJson()).toList(),

@@ -11,6 +11,7 @@ import '../../data/services/storage_service.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../data/repositories/annotation_repository.dart';
 import '../../services/dual_upload_service.dart';
+import '../../services/bcg_service.dart'; // FIX-002: Add BCG service
 
 /// Main controller for session lifecycle
 /// Persists throughout entire session flow
@@ -19,6 +20,7 @@ class SessionController extends GetxController {
   final BleService _bleService = Get.find<BleService>();
   final WebSocketService _wsService = Get.find<WebSocketService>();
   final DualUploadService _dualUploadService = Get.find<DualUploadService>();
+  final BcgService _bcgService = Get.find<BcgService>(); // FIX-002: BCG service
   final StorageService _storage = Get.find<StorageService>();
   final SessionRepository _sessionRepo = Get.find<SessionRepository>();
   final AnnotationRepository _annotationRepo = Get.find<AnnotationRepository>();
@@ -447,7 +449,7 @@ class SessionController extends GetxController {
   }) async {
     if (currentSession.value == null) return false;
 
-    print('[Session] 🚀 Starting surgery sequence...');
+    print('[Session] === STARTING SURGERY (CRITICAL TRANSITION) ===');
 
     try {
       // Update session with surgery details (non-blocking - errors will be queued for retry)
@@ -463,8 +465,25 @@ class SessionController extends GetxController {
         print('[Session] ⚠️ Surgery details update failed (will retry later): $e');
       }
 
-      // Transition to surgery phase (non-blocking - errors will be queued for retry)
-      print('[Session] 🔄 Updating session phase to SURGERY...');
+      // =========================================================================
+      // FIX-002: STEP 1 - DISABLE ALL PROCESSING BEFORE MODE SWITCH (Authoritative Spec)
+      // =========================================================================
+      print('[Session] 🛑 STEP 1: Disabling BCG processing...');
+      _bcgService.setProcessingMode(
+        mode: 'raw',
+        processingPermitted: false, // Processing DISABLED FIRST
+      );
+
+      // =========================================================================
+      // FIX-002: STEP 2 - FLUSH AND BLOCK VITALS UPLOAD (Authoritative Spec)
+      // =========================================================================
+      print('[Session] 🚫 STEP 2: Flushing and blocking vitals upload...');
+      await _dualUploadService.flushAndBlock();
+
+      // =========================================================================
+      // FIX-002: STEP 3 - UPDATE PHASE STATE (Authoritative Spec)
+      // =========================================================================
+      print('[Session] 🔄 STEP 3: Updating phase state to SURGERY...');
       try {
         // FIX 2: Include collar timestamp for Phase-1 safety
         final collarTimestamp = _bleService.latestCollarTimestampMs.value;
@@ -477,32 +496,21 @@ class SessionController extends GetxController {
         print('[Session] ⚠️ Phase update failed (will retry later): $e');
       }
 
-      // 🔥 Connect to websocket for real-time data streaming
-      try {
-        print('[Session] 🔌 Connecting to WebSocket...');
-        await _wsService.connectToRelay(sessionId: currentSession.value!.id);
-        print('[Session] 📡 WebSocket connected for surgery monitoring');
-      } catch (e, stackTrace) {
-        print('[Session] ⚠️ WebSocket connection failed (non-fatal): $e');
-        print('[Session] ✓ Continuing without WebSocket (offline mode)');
-        // Continue anyway - websocket is optional for offline mode
-      }
+      // =========================================================================
+      // FIX-002: STEP 4 - RECONFIGURE UPLOAD SERVICE FOR SURGERY (Authoritative Spec)
+      // =========================================================================
+      print('[Session] ⚙️ STEP 4: Reconfiguring upload service...');
+      _dualUploadService.configure(
+        sessionId: currentSession.value!.id,
+        phase: 'surgery',
+        mode: 'raw',
+        vitalsUploadPermitted: false, // Vitals upload DISABLED
+      );
 
-      // 🔥 Start dual upload service for batch cloud uploads
-      try {
-        print('[Session] 📤 Starting DualUploadService...');
-        await _dualUploadService.startSession(
-          currentSession.value!.id,
-          'surgery', // Phase
-          'raw', // Mode
-        );
-        print('[Session] ✅ DualUploadService started for batch uploads');
-      } catch (e) {
-        print('[Session] ⚠️ DualUploadService start failed (non-fatal): $e');
-      }
-
-      // Switch collar to raw mode for calibration
-      print('[Session] 📡 Switching collar to RAW mode...');
+      // =========================================================================
+      // FIX-002: STEP 5 - SWITCH COLLAR TO RAW MODE (Authoritative Spec)
+      // =========================================================================
+      print('[Session] 📡 STEP 5: Switching collar to RAW mode...');
       try {
         await _bleService.switchMode(
           FirmwareMode.raw,
@@ -550,6 +558,18 @@ class SessionController extends GetxController {
         rethrow;
       }
 
+      // =========================================================================
+      // FIX-002: STEP 6 - OPTIONAL: START WEBSOCKET (Authoritative Spec)
+      // =========================================================================
+      try {
+        print('[Session] 🔌 STEP 6: Connecting to WebSocket...');
+        await _wsService.connectToRelay(sessionId: currentSession.value!.id);
+        print('[Session] 📡 WebSocket connected for surgery monitoring');
+      } catch (e) {
+        print('[Session] ⚠️ WebSocket connection failed (non-fatal): $e');
+        print('[Session] ✓ Continuing without WebSocket (offline mode)');
+      }
+
       // Update local session state
       print('[Session] 💾 Updating local session state...');
       currentSession.value = currentSession.value!.copyWith(
@@ -563,7 +583,7 @@ class SessionController extends GetxController {
       // Add annotation
       _addSystemAnnotation('Surgery started: $surgeryType');
 
-      print('[Session] ✅ Surgery start sequence COMPLETE');
+      print('[Session] ✅ SURGERY STARTED: BCG=DISABLED, Vitals=BLOCKED, Router=ACTIVE');
       return true;
     } catch (e, stack) {
       print('[Session] ❌ ERROR starting surgery: $e');
@@ -612,10 +632,34 @@ class SessionController extends GetxController {
   }) async {
     if (currentSession.value == null) return false;
 
+    print('[Session] === STARTING RECOVERY ===');
+
     try {
+      // =========================================================================
+      // FIX-002: RE-ENABLE PROCESSING WITH CALIBRATED MODEL (Authoritative Spec)
+      // =========================================================================
+      print('[Session] ✅ Re-enabling BCG processing for recovery...');
+      _bcgService.setProcessingMode(
+        mode: 'filtered',
+        processingPermitted: true, // Processing ENABLED in recovery
+      );
+
+      // =========================================================================
+      // FIX-002: RE-ENABLE VITALS UPLOAD (Authoritative Spec)
+      // =========================================================================
+      print('[Session] ✅ Re-enabling vitals upload...');
+      _dualUploadService.configure(
+        sessionId: currentSession.value!.id,
+        phase: 'recovery',
+        mode: 'filtered',
+        vitalsUploadPermitted: true, // Vitals upload ENABLED
+      );
+
       // Switch collar back to filtered mode
+      print('[Session] 📡 Switching collar to FILTERED mode...');
       await _bleService.switchMode(FirmwareMode.filtered);
 
+      // Update phase
       await _sessionRepo.updatePhase(
         currentSession.value!.id,
         SessionPhase.recovery,
@@ -628,8 +672,11 @@ class SessionController extends GetxController {
 
       _addSystemAnnotation('Recovery phase started');
 
+      print('[Session] ✅ RECOVERY STARTED: BCG=ENABLED, Vitals=ENABLED');
+
       return true;
     } catch (e) {
+      print('[Session] ❌ Failed to start recovery: $e');
       Get.snackbar('Error', 'Failed to start recovery');
       return false;
     }
