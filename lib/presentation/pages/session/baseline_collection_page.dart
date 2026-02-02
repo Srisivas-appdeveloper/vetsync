@@ -166,28 +166,31 @@ class BaselineCollectionPage extends GetView<BaselineController> {
   }
   
   Widget _buildCollectionView() {
-    return Column(
-      children: [
-        // Progress section
-        _buildProgressSection(),
-        
-        // Waveform display
-        Expanded(
-          child: _buildWaveformDisplay(),
-        ),
-        
-        // Real-time vitals
-        _buildVitalsRow(),
-        
-        // Quality indicator
-        _buildQualityBar(),
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Progress section
+          _buildProgressSection(),
 
-        // Real-time quality feedback
-        _buildQualityIndicators(),
+          // Waveform display (fixed height since we're now scrollable)
+          SizedBox(
+            height: 250, // Fixed height for waveform (increased to prevent overflow)
+            child: _buildWaveformDisplay(),
+          ),
 
-        // Controls
-        _buildControls(),
-      ],
+          // Real-time vitals
+          _buildVitalsRow(),
+
+          // Quality indicator
+          _buildQualityBar(),
+
+          // Real-time quality feedback
+          _buildQualityIndicators(),
+
+          // Controls
+          _buildControls(),
+        ],
+      ),
     );
   }
   
@@ -258,7 +261,7 @@ class BaselineCollectionPage extends GetView<BaselineController> {
   
   Widget _buildWaveformDisplay() {
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -267,14 +270,17 @@ class BaselineCollectionPage extends GetView<BaselineController> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'BCG Waveform',
             style: AppTypography.labelSmall,
           ),
           const SizedBox(height: 8),
-          
-          Expanded(
+
+          // Fixed height for chart to prevent overflow
+          SizedBox(
+            height: 150,
             child: Obx(() => _WaveformChart(
               data: controller.waveformBuffer.toList(),
             )),

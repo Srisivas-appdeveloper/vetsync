@@ -307,62 +307,48 @@ class _SurgeryPageState extends State<SurgeryPage>
   Widget _buildVitalsSection() {
     return Container(
       padding: const EdgeInsets.all(16),
-      child: Obx(() {
-        final vitals = _sessionController.latestVitals.value;
-        final animal = _sessionController.currentAnimal.value;
-        final ranges = animal?.vitalRanges;
-
-        // Use confidence-gated display values
-        final displayHR = vitals?.displayHR;
-        final displayRR = vitals?.displayRR;
-        final displayTemp = vitals?.displayTemperature;
-
-        return Row(
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.surgeryRed.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.surgeryRed.withValues(alpha: 0.3),
+            width: 2,
+          ),
+        ),
+        child: Row(
           children: [
-            // Heart Rate - show "Analyzing..." when confidence too low
-            Expanded(
-              child: _VitalDisplay(
-                label: 'Heart Rate',
-                value: displayHR?.toDouble() ?? 0,
-                unit: 'bpm',
-                icon: Icons.favorite,
-                color: AppColors.error,
-                range: ranges?.heartRate,
-                showAnalyzing: displayHR == null && vitals != null,
-              ),
+            Icon(
+              Icons.sensors,
+              color: AppColors.surgeryRed,
+              size: 32,
             ),
-            const SizedBox(width: 12),
-
-            // Respiratory Rate - show "Analyzing..." when confidence too low
+            const SizedBox(width: 16),
             Expanded(
-              child: _VitalDisplay(
-                label: 'Resp Rate',
-                value: displayRR?.toDouble() ?? 0,
-                unit: 'brpm',
-                icon: Icons.air,
-                color: AppColors.info,
-                range: ranges?.respiratoryRate,
-                showAnalyzing: displayRR == null && vitals != null,
-              ),
-            ),
-            const SizedBox(width: 12),
-
-            // Temperature - show "--" when invalid
-            Expanded(
-              child: _VitalDisplay(
-                label: 'Temperature',
-                value: displayTemp ?? 0,
-                unit: '°C',
-                icon: Icons.thermostat,
-                color: AppColors.warning,
-                range: ranges?.temperature,
-                isDecimal: true,
-                showAnalyzing: false, // Temperature uses "--" not "Analyzing..."
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Raw Data Collection Mode',
+                    style: AppTypography.titleMedium.copyWith(
+                      color: AppColors.surgeryRed,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Vitals processing disabled during surgery. High-resolution raw sensor data is being recorded for post-surgery analysis.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
-        );
-      }),
+        ),
+      ),
     );
   }
 
@@ -614,8 +600,8 @@ class _SurgeryPageState extends State<SurgeryPage>
       AlertDialog(
         title: const Text('End Surgery?'),
         content: const Text(
-          'This will transition to calibration phase. '
-          'Make sure ECG is connected for calibration.',
+          'This will transition to recovery phase. '
+          'The collar will switch back to filtered mode for recovery monitoring.',
         ),
         actions: [
           TextButton(
@@ -624,10 +610,13 @@ class _SurgeryPageState extends State<SurgeryPage>
           ),
           ElevatedButton(
             onPressed: () async {
+              print('[SurgeryPage] 🔴 End Surgery button clicked!');
               Get.back();
+              print('[SurgeryPage] 🔴 Calling endSurgery()...');
               final success = await _sessionController.endSurgery();
+              print('[SurgeryPage] 🔴 endSurgery() returned: $success');
               if (success) {
-                Get.offNamed(Routes.calibration);
+                Get.offNamed(Routes.recovery);
               }
             },
             child: const Text('End Surgery'),
@@ -639,133 +628,6 @@ class _SurgeryPageState extends State<SurgeryPage>
 }
 
 /// Large vital display widget
-class _VitalDisplay extends StatelessWidget {
-  final String label;
-  final num value;
-  final String unit;
-  final IconData icon;
-  final Color color;
-  final VitalRange? range;
-  final bool isDecimal;
-  final bool showAnalyzing;
-
-  const _VitalDisplay({
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.icon,
-    required this.color,
-    this.range,
-    this.isDecimal = false,
-    this.showAnalyzing = false,
-  });
-
-  /// Check if value is valid (not placeholder/invalid)
-  bool get _isValidValue {
-    if (isDecimal) {
-      // For temperature
-      return value > 0 && value < 50; // Valid temperature range
-    } else {
-      // For heart rate and respiratory rate
-      return value >= 30; // Minimum plausible vital sign
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isInRange = range?.isInRange(value.toDouble()) ?? true;
-    final displayColor = isInRange ? color : AppColors.warning;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: displayColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: displayColor.withOpacity(0.3)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Label with icon
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: displayColor),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  style: AppTypography.labelSmall.copyWith(color: displayColor),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          // Value and unit
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Flexible(
-                child: Text(
-                  showAnalyzing
-                      ? 'Analyzing...'
-                      : (_isValidValue
-                          ? (isDecimal ? value.toStringAsFixed(1) : value.toString())
-                          : '--'),
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
-                    fontSize: showAnalyzing ? 14 : 20,
-                    fontWeight: showAnalyzing ? FontWeight.normal : FontWeight.bold,
-                    color: showAnalyzing ? displayColor.withOpacity(0.7) : displayColor,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-              if (!showAnalyzing) const SizedBox(width: 2),
-              if (!showAnalyzing)
-                Flexible(
-                  child: Text(
-                    unit,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: displayColor,
-                      fontSize: 12,
-                    ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ],
-          ),
-          // Show warning badge if out of range OR invalid
-          if (!isInRange || !_isValidValue)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: _isValidValue ? AppColors.warning : AppColors.error.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'OUT OF RANGE',
-                style: AppTypography.badge.copyWith(fontSize: 8),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Mini trend chart widget
 class _TrendChart extends StatelessWidget {
   final String title;

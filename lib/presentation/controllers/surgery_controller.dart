@@ -310,8 +310,8 @@ class SurgeryController extends GetxController {
       AlertDialog(
         title: const Text('End Surgery?'),
         content: const Text(
-          'This will transition to the calibration phase. '
-          'Make sure ECG equipment is ready for calibration.',
+          'This will transition to recovery phase. '
+          'The collar will switch back to filtered mode for recovery monitoring.',
         ),
         actions: [
           TextButton(
@@ -325,11 +325,11 @@ class SurgeryController extends GetxController {
         ],
       ),
     );
-    
+
     if (confirmed == true) {
       final success = await _sessionController.endSurgery();
       if (success) {
-        Get.offNamed(Routes.calibration);
+        Get.offNamed(Routes.recovery);
       }
     }
   }

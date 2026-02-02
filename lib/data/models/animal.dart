@@ -85,6 +85,21 @@ class Animal {
   /// Get weight display string
   String get weightDisplay => '${weightKg.toStringAsFixed(1)} kg';
 
+  /// Get size category based on weight and species
+  String get sizeCategory {
+    // Different weight ranges for different species
+    if (species == Species.cat) {
+      if (weightKg < 3.5) return 'small';
+      if (weightKg < 6.0) return 'medium';
+      return 'large';
+    } else {
+      // Dog or other
+      if (weightKg < 10.0) return 'small';
+      if (weightKg < 25.0) return 'medium';
+      return 'large';
+    }
+  }
+
   /// Get sex icon
   String get sexIcon {
     switch (sex) {

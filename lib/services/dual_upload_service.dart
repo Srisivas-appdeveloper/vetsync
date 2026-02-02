@@ -38,6 +38,9 @@ class DualUploadService extends GetxService {
   static const int _vitalsBatchSize = 10; // 10 vitals records per batch
   static const int _vitalsMaxBufferSize = 100;
 
+  // Chunk numbering (for tracking batch order)
+  int _chunkNumber = 0;
+
   // Upload timers
   Timer? _rawDataUploadTimer;
   Timer? _vitalsUploadTimer;
@@ -99,6 +102,24 @@ class DualUploadService extends GetxService {
     print('[DualUpload] Vitals buffer cleared and blocked');
   }
 
+  // =========================================================================
+  // FIX: FLUSH RAW DATA AND STOP
+  // Called AFTER surgery ends to upload final raw data and stop buffering
+  // =========================================================================
+  Future<void> flushRawDataAndStop() async {
+    print('[DualUpload] === FLUSH RAW DATA AND STOP ===');
+
+    // Upload any remaining raw data from surgery
+    if (_rawDataBuffer.isNotEmpty) {
+      print('[DualUpload] Flushing ${_rawDataBuffer.length} final raw data packets');
+      await _uploadRawDataBatch();
+    }
+
+    // Clear buffer to prevent any further uploads
+    _rawDataBuffer.clear();
+    print('[DualUpload] Raw data buffer cleared - no more raw uploads');
+  }
+
   /// Start a new session with dual upload
   Future<void> startSession(
     String sessionId,
@@ -126,6 +147,7 @@ class DualUploadService extends GetxService {
     rawPacketsSent.value = 0;
     vitalsBatchesSent.value = 0;
     uploadErrors.value = 0;
+    _chunkNumber = 0;
 
     // Start periodic upload timers
     _startUploadTimers();
@@ -169,6 +191,14 @@ class DualUploadService extends GetxService {
   void addCollarData(CollarDataPacket packet) {
     if (_sessionId == null) {
       // Silently ignore data when no session is active (normal during baseline)
+      return;
+    }
+
+    // =========================================================================
+    // FIX: Only buffer raw data during surgery phase with RAW mode
+    // =========================================================================
+    if (_currentPhase != 'surgery' || _currentMode != 'raw') {
+      // Silent discard - this is expected behavior outside surgery
       return;
     }
 
@@ -280,10 +310,15 @@ class DualUploadService extends GetxService {
 
   /// Start periodic upload timers
   void _startUploadTimers() {
-    // Upload raw data every 1 second
+    // Upload raw data every 1 second (only during surgery phase)
     _rawDataUploadTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_rawDataBuffer.isNotEmpty) {
-        _uploadRawDataBatch();
+      // =====================================================================
+      // FIX: Only upload raw data during surgery phase with RAW mode
+      // =====================================================================
+      if (_currentPhase == 'surgery' && _currentMode == 'raw') {
+        if (_rawDataBuffer.isNotEmpty) {
+          _uploadRawDataBatch();
+        }
       }
     });
 
@@ -297,7 +332,6 @@ class DualUploadService extends GetxService {
           _uploadVitalsBatch();
         }
       }
-      // Raw data upload always proceeds (for disaster recovery)
     });
   }
 
@@ -311,14 +345,6 @@ class DualUploadService extends GetxService {
         : _rawDataBatchSize;
     final batch = _rawDataBuffer.sublist(0, batchSize);
     _rawDataBuffer.removeRange(0, batchSize);
-
-    print('');
-    print('[DualUpload] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    print('[DualUpload] 📤 UPLOADING RAW DATA BATCH');
-    print('[DualUpload] Batch size: ${batch.length} packets');
-    print('[DualUpload] Endpoint: POST /sessions/$_sessionId/raw-collar-data/upload');
-    print('[DualUpload] Phase: $_currentPhase | Mode: $_currentMode');
-    print('[DualUpload] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     try {
       isUploading.value = true;
@@ -336,6 +362,9 @@ class DualUploadService extends GetxService {
       // Sample rate: 100Hz for raw mode, 1Hz for filtered mode
       final sampleRateHz = _currentMode == 'raw' ? 100 : 1;
 
+      // Increment chunk number for this batch
+      _chunkNumber++;
+
       // Convert to MessagePack
       final messagePackData = serialize({
         'session_id': _sessionId,
@@ -345,32 +374,29 @@ class DualUploadService extends GetxService {
         'data': batch,
       });
 
-      print('[DualUpload] 🔄 Serialized to MessagePack: ${messagePackData.length} bytes');
-      print('[DualUpload] 📊 Timestamps: $timestampStart → $timestampEnd (${timestampEnd - timestampStart}ms)');
-      print('[DualUpload] 🔢 Sample rate: $sampleRateHz Hz');
+      // Prepare headers
+      final uploadHeaders = {
+        'X-Data-Phase': _currentPhase,
+        'X-Data-Mode': _currentMode,
+        'X-Sample-Rate-Hz': sampleRateHz.toString(),
+        'X-Batch-Size': batch.length.toString(),
+        'X-Timestamp-Start': timestampStart.toString(),
+        'X-Timestamp-End': timestampEnd.toString(),
+        'X-Chunk-Number': _chunkNumber.toString(),
+      };
+
+      // Log headers
+      print('[DualUpload] Upload Headers: $uploadHeaders');
 
       // Upload to backend with all required headers
       await _apiService.uploadRawCollarData(
         sessionId: _sessionId!,
-        headers: {
-          'X-Data-Phase': _currentPhase,
-          'X-Data-Mode': _currentMode,
-          'X-Sample-Rate-Hz': sampleRateHz.toString(),
-          'X-Batch-Size': batch.length.toString(),
-          'X-Timestamp-Start': timestampStart.toString(),
-          'X-Timestamp-End': timestampEnd.toString(),
-        },
+        headers: uploadHeaders,
         data: Uint8List.fromList(messagePackData),
       );
 
       rawPacketsSent.value += batch.length;
-
-      print('[DualUpload] ✅ SUCCESS - Raw data uploaded');
-      print('[DualUpload] Total packets sent: ${rawPacketsSent.value}');
-      print('[DualUpload] Remaining in buffer: ${_rawDataBuffer.length}');
-      print('');
     } catch (e) {
-      print('[DualUpload] ❌ Failed to upload raw data batch: $e');
       uploadErrors.value++;
 
       // Queue for offline retry - insert directly into sync queue
@@ -400,15 +426,14 @@ class DualUploadService extends GetxService {
             'X-Batch-Size': batch.length.toString(),
             'X-Timestamp-Start': timestampStart.toString(),
             'X-Timestamp-End': timestampEnd.toString(),
+            'X-Chunk-Number': _chunkNumber.toString(),
           }),
           'created_at': DateTime.now().toIso8601String(),
           'uploaded': 0,
           'retry_count': 0,
         });
-
-        print('[DualUpload] 💾 Queued raw data batch for offline retry');
       } catch (queueError) {
-        print('[DualUpload] ❌ Failed to queue raw data: $queueError');
+        // Silent failure
       }
     } finally {
       isUploading.value = false;

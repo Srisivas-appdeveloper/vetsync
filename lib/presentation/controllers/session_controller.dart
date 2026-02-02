@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../app/routes/app_pages.dart';
+import '../../core/constants/app_config.dart';
 import '../../data/models/models.dart';
+import '../../data/services/api_service.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/ble_service.dart';
 import '../../data/services/websocket_service.dart';
@@ -16,6 +18,7 @@ import '../../services/bcg_service.dart'; // FIX-002: Add BCG service
 /// Main controller for session lifecycle
 /// Persists throughout entire session flow
 class SessionController extends GetxController {
+  final ApiService _api = Get.find<ApiService>();
   final AuthService _authService = Get.find<AuthService>();
   final BleService _bleService = Get.find<BleService>();
   final WebSocketService _wsService = Get.find<WebSocketService>();
@@ -60,6 +63,11 @@ class SessionController extends GetxController {
   Timer? _durationTimer;
   final RxString sessionDuration = '00:00:00'.obs;
   final RxString phaseDuration = '00:00:00'.obs;
+
+  // Stream subscriptions (need to be canceled to prevent "Cannot add events after close" error)
+  StreamSubscription? _vitalsStreamSubscription;
+  Worker? _batteryWorker;
+  Worker? _connectionWorker;
 
   // Connection states
   bool get isCollarConnected =>
@@ -130,25 +138,42 @@ class SessionController extends GetxController {
   @override
   void onClose() {
     _durationTimer?.cancel();
+
+    // Cancel stream subscriptions to prevent "Cannot add events after close" error
+    _vitalsStreamSubscription?.cancel();
+    _batteryWorker?.dispose();
+    _connectionWorker?.dispose();
+
     super.onClose();
   }
 
   /// Setup BLE data listeners
   void _setupBleListeners() {
-    // Listen to vitals stream
-    _bleService.vitalsStream.listen((vitals) {
-      latestVitals.value = vitals;
-      signalQuality.value = vitals.signalQuality;
-    });
+    // Cancel existing subscriptions if any
+    _vitalsStreamSubscription?.cancel();
+    _batteryWorker?.dispose();
+    _connectionWorker?.dispose();
 
-    // Listen to battery updates from the reactive value
-    ever(_bleService.batteryPercent, (int battery) {
+    // Listen to vitals stream (store subscription for proper cleanup)
+    _vitalsStreamSubscription = _bleService.vitalsStream.listen(
+      (vitals) {
+        latestVitals.value = vitals;
+        signalQuality.value = vitals.signalQuality;
+      },
+      onError: (error) {
+        print('[Session] ⚠️ Vitals stream error: $error');
+      },
+      cancelOnError: false, // Keep listening even if there's an error
+    );
+
+    // Listen to battery updates from the reactive value (store worker for proper cleanup)
+    _batteryWorker = ever(_bleService.batteryPercent, (int battery) {
       batteryPercent.value = battery;
       _checkBatteryWarning(battery);
     });
 
-    // Listen to COMPOSITE connection state
-    ever(_bleService.isConnected, _handleConnectionChange);
+    // Listen to COMPOSITE connection state (store worker for proper cleanup)
+    _connectionWorker = ever(_bleService.isConnected, _handleConnectionChange);
   }
 
   /// Handle BLE connection state changes (Composite)
@@ -465,6 +490,53 @@ class SessionController extends GetxController {
         print('[Session] ⚠️ Surgery details update failed (will retry later): $e');
       }
 
+      // Call session start API
+      print('[Session] 🚀 Calling session start API...');
+      final animal = currentAnimal.value;
+      final collar = currentCollar.value;
+
+      final endpoint = ApiEndpoints.sessionStart(currentSession.value!.id);
+      final requestData = {
+        'workstation_id': AppConfig.defaultWorkstationId,
+        'animal_id': animal?.id ?? '',
+        'collar_id': collar?.id ?? '',
+        'animal_metadata': {
+          'species': animal?.species.value ?? 'unknown',
+          'breed': animal?.breed ?? 'unknown',
+          'weight_kg': animal?.weightKg ?? 0.0,
+          'age_years': animal?.ageYears ?? 0,
+          'size_category': animal?.sizeCategory ?? 'medium',
+        },
+      };
+
+      print('[Session] Endpoint: POST ${AppConfig.baseUrl}$endpoint');
+      print('[Session] Request data: $requestData');
+
+      final response = await _api.post(endpoint, data: requestData);
+
+      print('[Session] ✅ Session start API response: ${response.data}');
+
+      // Check if response has success flag
+      final responseData = response.data;
+      final isSuccess = responseData is Map &&
+                        (responseData['success'] == true ||
+                         responseData['status'] == 'success');
+
+      if (!isSuccess) {
+        print('[Session] ❌ Session start API returned failure');
+        print('[Session] Response: $responseData');
+        Get.snackbar(
+          'Error',
+          'Failed to start session on server',
+          duration: const Duration(seconds: 5),
+          backgroundColor: Colors.red[100],
+          colorText: Colors.red[900],
+        );
+        return false;
+      }
+
+      print('[Session] ✅ Session start API successful, proceeding with surgery start...');
+
       // =========================================================================
       // FIX-002: STEP 1 - DISABLE ALL PROCESSING BEFORE MODE SWITCH (Authoritative Spec)
       // =========================================================================
@@ -558,18 +630,6 @@ class SessionController extends GetxController {
         rethrow;
       }
 
-      // =========================================================================
-      // FIX-002: STEP 6 - OPTIONAL: START WEBSOCKET (Authoritative Spec)
-      // =========================================================================
-      try {
-        print('[Session] 🔌 STEP 6: Connecting to WebSocket...');
-        await _wsService.connectToRelay(sessionId: currentSession.value!.id);
-        print('[Session] 📡 WebSocket connected for surgery monitoring');
-      } catch (e) {
-        print('[Session] ⚠️ WebSocket connection failed (non-fatal): $e');
-        print('[Session] ✓ Continuing without WebSocket (offline mode)');
-      }
-
       // Update local session state
       print('[Session] 💾 Updating local session state...');
       currentSession.value = currentSession.value!.copyWith(
@@ -599,26 +659,86 @@ class SessionController extends GetxController {
     }
   }
 
-  /// End surgery and start calibration
+  /// End surgery and transition directly to recovery
   Future<bool> endSurgery() async {
     if (currentSession.value == null) return false;
 
+    print('[Session] === ENDING SURGERY (DIRECT TO RECOVERY) ===');
+
     try {
+      surgeryEndTime.value = DateTime.now();
+
+      // Add annotation for surgery end
+      _addSystemAnnotation('Surgery ended');
+
+      // =========================================================================
+      // FIX-002: RE-ENABLE PROCESSING WITH FILTERED MODE (Skip Calibration)
+      // =========================================================================
+      print('[Session] ✅ Re-enabling BCG processing for recovery...');
+      _bcgService.setProcessingMode(
+        mode: 'filtered',
+        processingPermitted: true, // Processing ENABLED in recovery
+      );
+
+      // =========================================================================
+      // FIX: FLUSH REMAINING RAW DATA AND STOP RAW UPLOADS
+      // =========================================================================
+      print('[Session] 🔄 Flushing remaining raw data...');
+      await _dualUploadService.flushRawDataAndStop();
+
+      // Call session stop API
+      print('[Session] 🛑 Calling session stop API...');
+      try {
+        final response = await _api.post(
+          ApiEndpoints.sessionStop(currentSession.value!.id),
+          data: {
+            'reason': 'normal',
+          },
+        );
+        print('[Session] ✅ Session stop API response: ${response.data}');
+      } catch (e) {
+        print('[Session] ⚠️ Session stop API failed (non-fatal): $e');
+      }
+
+      // =========================================================================
+      // FIX-002: RE-ENABLE VITALS UPLOAD (Authoritative Spec)
+      // =========================================================================
+      print('[Session] ✅ Re-enabling vitals upload...');
+      _dualUploadService.configure(
+        sessionId: currentSession.value!.id,
+        phase: 'recovery',
+        mode: 'filtered',
+        vitalsUploadPermitted: true, // Vitals upload ENABLED
+      );
+
+      // Switch collar back to filtered mode
+      print('[Session] 📡 Switching collar to FILTERED mode...');
+      try {
+        await _bleService.switchMode(FirmwareMode.filtered);
+        print('[Session] ✅ Collar switched to FILTERED mode');
+      } catch (e) {
+        print('[Session] ⚠️ Failed to switch collar mode (non-fatal): $e');
+      }
+
+      // Update phase to recovery (skip calibration)
+      print('[Session] 🔄 Updating phase to RECOVERY...');
       await _sessionRepo.updatePhase(
         currentSession.value!.id,
-        SessionPhase.calibration,
+        SessionPhase.recovery,
       );
 
       // Update local session state
       currentSession.value = currentSession.value!.copyWith(
-        currentPhase: SessionPhase.calibration,
+        currentPhase: SessionPhase.recovery,
       );
-      surgeryEndTime.value = DateTime.now();
 
-      _addSystemAnnotation('Surgery ended');
+      _addSystemAnnotation('Recovery phase started');
+
+      print('[Session] ✅ RECOVERY STARTED: BCG=ENABLED, Vitals=ENABLED (Calibration skipped)');
 
       return true;
     } catch (e) {
+      print('[Session] ❌ Failed to end surgery: $e');
       Get.snackbar('Error', 'Failed to end surgery');
       return false;
     }

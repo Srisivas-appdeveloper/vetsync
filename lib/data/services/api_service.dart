@@ -384,103 +384,20 @@ class _AuthInterceptor extends Interceptor {
 class _LoggingInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    print('[ApiService] ========================================');
-    print('[ApiService] 🌐 ${options.method} REQUEST');
-    print('[ApiService] ========================================');
-    print('[ApiService] Method: ${options.method}');
-    print('[ApiService] URL: ${options.uri}');
-
-    // Log headers (excluding sensitive data)
-    if (options.headers.isNotEmpty) {
-      final sanitizedHeaders = Map<String, dynamic>.from(options.headers);
-      if (sanitizedHeaders.containsKey('Authorization')) {
-        final auth = sanitizedHeaders['Authorization'].toString();
-        sanitizedHeaders['Authorization'] = auth.length > 20
-            ? '${auth.substring(0, 20)}...'
-            : auth;
-      }
-      print('[ApiService] Headers:');
-      sanitizedHeaders.forEach((key, value) {
-        print('[ApiService]   $key: $value');
-      });
-    }
-
-    // Log query parameters
-    if (options.queryParameters.isNotEmpty) {
-      print('[ApiService] Query Parameters:');
-      options.queryParameters.forEach((key, value) {
-        print('[ApiService]   $key: $value');
-      });
-    }
-
-    // Log request body
-    if (options.data != null) {
-      print('[ApiService] Request Body:');
-      try {
-        if (options.data is FormData) {
-          print('[ApiService]   [FormData - multipart/form-data]');
-          final formData = options.data as FormData;
-          for (var field in formData.fields) {
-            print('[ApiService]   ${field.key}: ${field.value}');
-          }
-          for (var file in formData.files) {
-            print('[ApiService]   ${file.key}: [File: ${file.value.filename}]');
-          }
-        } else if (options.data is Map || options.data is List) {
-          final prettyJson = const JsonEncoder.withIndent('  ').convert(options.data);
-          print('[ApiService]   $prettyJson');
-        } else {
-          print('[ApiService]   ${options.data}');
-        }
-      } catch (e) {
-        print('[ApiService]   [Could not format body: $e]');
-        print('[ApiService]   Raw: ${options.data}');
-      }
-    }
-    print('[ApiService] ========================================');
-
+    // Don't log successful requests - only errors
     handler.next(options);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    print('[ApiService] ========================================');
-    print('[ApiService] ✅ ${response.requestOptions.method} RESPONSE - ${response.statusCode}');
-    print('[ApiService] ========================================');
-    print('[ApiService] Method: ${response.requestOptions.method}');
-    print('[ApiService] Status Code: ${response.statusCode}');
-    print('[ApiService] URL: ${response.requestOptions.uri}');
-
-    // Log response headers
-    if (response.headers.map.isNotEmpty) {
-      print('[ApiService] Response Headers:');
-      response.headers.map.forEach((key, values) {
-        print('[ApiService]   $key: ${values.join(", ")}');
-      });
-    }
-
-    // Log response body
-    print('[ApiService] Response Body:');
-    try {
-      if (response.data is Map || response.data is List) {
-        final prettyJson = const JsonEncoder.withIndent('  ').convert(response.data);
-        print('[ApiService]   $prettyJson');
-      } else if (response.data is String) {
-        print('[ApiService]   ${response.data}');
-      } else {
-        print('[ApiService]   [${response.data.runtimeType}]: ${response.data}');
-      }
-    } catch (e) {
-      print('[ApiService]   [Could not format response: $e]');
-      print('[ApiService]   Raw: ${response.data}');
-    }
-    print('[ApiService] ========================================');
-
+    // Don't log successful responses - only errors
     handler.next(response);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    // Only log errors
+
     print('[ApiService] ========================================');
     print('[ApiService] ❌ ${err.requestOptions.method} ERROR - ${err.response?.statusCode ?? "No Response"}');
     print('[ApiService] ========================================');

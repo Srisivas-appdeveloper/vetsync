@@ -39,6 +39,7 @@ class AppConfig {
 
   // Session Configuration
   static const Duration sessionTimeout = Duration(hours: 8);
+  static const String defaultWorkstationId = 'WS-9876';
 
   // Baseline Configuration (Redesigned)
   static const int baselineDurationSeconds = 120; // 2 minutes minimum
@@ -144,10 +145,12 @@ class ApiEndpoints {
       '/api/v1/sessions/$id/annotations';
   static String sessionVitals(String id) => '/api/v1/sessions/$id/vitals';
   static String sessionVitalsBatch(String id) =>
-      '/api/v1/sessions/$id/vitals/batch';
-  static String sessionJoinCode(String id) => '/api/v1/sessions/$id/join-code';
-  static String sessionCollar(String id) => '/api/v1/sessions/$id/collar';
-  static const String joinSession = '/api/v1/sessions/join';
+      '/v1/sessions/$id/vitals/batch';
+  static String sessionJoinCode(String id) => '/v1/sessions/$id/join-code';
+  static String sessionCollar(String id) => '/v1/sessions/$id/collar';
+  static const String joinSession = '/v1/sessions/join';
+  static String sessionStart(String id) => '/v1/sessions/$id/start';
+  static String sessionStop(String id) => '/v1/sessions/$id/stop';
 
   // Annotations
   static const String annotations = '/annotations';

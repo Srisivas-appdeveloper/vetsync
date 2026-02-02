@@ -18,6 +18,7 @@ import '../../services/dual_upload_service.dart';
 import '../../services/surgery_data_router.dart';
 import '../../services/calibration_service.dart';
 import '../../services/bcg_processor_service.dart';
+import '../../services/bcg_service.dart';
 import '../../services/network_queue_manager.dart';
 import '../../services/ble_service.dart';
 
@@ -42,6 +43,7 @@ class InitialBinding extends Bindings {
     Get.put(SurgeryDataRouter(), permanent: true);
     Get.put(CalibrationService(), permanent: true);
     Get.put(BCGProcessorService(), permanent: true);
+    Get.put(BcgService(), permanent: true); // BCG service for FIX-002
     Get.put(NetworkQueueManager(), permanent: true);
     Get.put(
       BLEService(),

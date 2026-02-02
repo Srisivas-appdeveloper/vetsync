@@ -55,6 +55,12 @@ class PetSelectionController extends GetxController {
     }
   }
 
+  /// Public method to refresh the pet list
+  @override
+  Future<void> refresh() async {
+    await _loadRecentAnimals();
+  }
+
   /// Handle search input changes with debounce
   void _onSearchChanged() {
     final query = searchController.text.trim();
@@ -277,38 +283,30 @@ class AddPetController extends GetxController {
             : notesController.text.trim(),
       );
 
-      // Select the new pet and go to collar scan
-      final sessionController = Get.find<SessionController>();
-      sessionController.currentAnimal.value = animal;
-
       print('[AddPet] ========================================');
       print('[AddPet] ✅ Pet created successfully: ${animal.name}');
-      print('[AddPet] 🚀 Attempting navigation to collar scan...');
-      print('[AddPet] Target Route: ${Routes.collarScan}');
-      try {
-        Get.offNamed(Routes.collarScan);
-        print('[AddPet] ✅ Navigation successful');
-        print('[AddPet] ========================================');
-      } catch (navError, navStackTrace) {
-        print('[AddPet] ========================================');
-        print('[AddPet] ❌ NAVIGATION ERROR');
-        print('[AddPet] ========================================');
-        print('[AddPet] Error Type: ${navError.runtimeType}');
-        print('[AddPet] Error Message: $navError');
-        print('[AddPet] Attempted Route: ${Routes.collarScan}');
-        print('[AddPet] Created Pet: ${animal.name} (${animal.id})');
-        print('[AddPet] Stack Trace:');
-        print(navStackTrace);
-        print('[AddPet] ========================================');
+      print('[AddPet] 🔙 Returning to pet selection screen...');
+      print('[AddPet] ========================================');
 
-        Get.snackbar(
-          'Navigation Error',
-          'Pet created but failed to navigate. Please go back and select the pet.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Get.theme.colorScheme.errorContainer,
-          colorText: Get.theme.colorScheme.onErrorContainer,
-          duration: const Duration(seconds: 5),
-        );
+      // Go back to pet selection screen
+      Get.back();
+
+      // Show success message
+      Get.snackbar(
+        'Success',
+        'Pet "${animal.name}" created successfully. Tap to select.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.primaryContainer,
+        colorText: Get.theme.colorScheme.onPrimaryContainer,
+        duration: const Duration(seconds: 3),
+      );
+
+      // Refresh the pet list to show the new pet
+      try {
+        final petSelectionController = Get.find<PetSelectionController>();
+        await petSelectionController.refresh();
+      } catch (e) {
+        print('[AddPet] Could not refresh pet list: $e');
       }
     } catch (e) {
       Get.snackbar('Error', 'Failed to create pet');
