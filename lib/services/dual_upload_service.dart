@@ -388,6 +388,39 @@ class DualUploadService extends GetxService {
       // Log headers
       print('[DualUpload] Upload Headers: $uploadHeaders');
 
+      // =========================================================================
+      // Console log: Raw data body being sent
+      // =========================================================================
+      print('');
+      print('[DualUpload] ══════════════════════════════════════════════════════════');
+      print('[DualUpload] 📤 RAW DATA BODY (MessagePack) BEING SENT:');
+      print('[DualUpload] ──────────────────────────────────────────────────────────');
+      print('[DualUpload] session_id: $_sessionId');
+      print('[DualUpload] phase: $_currentPhase');
+      print('[DualUpload] mode: $_currentMode');
+      print('[DualUpload] timestamp: ${DateTime.now().toIso8601String()}');
+      print('[DualUpload] data: [${batch.length} packets]');
+      print('[DualUpload] ──────────────────────────────────────────────────────────');
+      print('[DualUpload] SAMPLE PACKET (first in batch):');
+      if (batch.isNotEmpty) {
+        final samplePacket = batch.first;
+        print('[DualUpload]   timestamp_ms: ${samplePacket['timestamp_ms']}');
+        print('[DualUpload]   timestamp: ${samplePacket['timestamp']}');
+        print('[DualUpload]   sequence: ${samplePacket['sequence']}');
+        print('[DualUpload]   packet_type: ${samplePacket['packet_type']}');
+        print('[DualUpload]   pressure_raw: ${samplePacket['pressure_raw']}');
+        print('[DualUpload]   pressure_filtered: ${samplePacket['pressure_filtered']}');
+        print('[DualUpload]   imu_accel: ${samplePacket['imu_accel']}');
+        print('[DualUpload]   imu_gyro: ${samplePacket['imu_gyro']}');
+        print('[DualUpload]   temperature_c: ${samplePacket['temperature_c']}');
+        print('[DualUpload]   battery_percent: ${samplePacket['battery_percent']}');
+        print('[DualUpload]   signal_quality: ${samplePacket['signal_quality']}');
+        print('[DualUpload]   heart_rate_bpm: ${samplePacket['heart_rate_bpm']}');
+        print('[DualUpload]   respiratory_rate_bpm: ${samplePacket['respiratory_rate_bpm']}');
+      }
+      print('[DualUpload] ══════════════════════════════════════════════════════════');
+      print('');
+
       // Upload to backend with all required headers
       await _apiService.uploadRawCollarData(
         sessionId: _sessionId!,
