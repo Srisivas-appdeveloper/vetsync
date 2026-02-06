@@ -1182,11 +1182,11 @@ class BleService extends GetxService {
         respiratoryRateBpm: _bcgService.latestResult?.respiratoryRateBpm ?? 0,
         temperatureC: packet.temperatureCelsius,
         batteryPercent: packet.batteryPercent,
+        batteryMv: packet.batteryMv, // Added for enriched uploads
+        statusFlags: packet.statusFlags, // Added for enriched uploads
         signalQuality: effectiveSignalQuality,
         pressureFiltered: packet.pressure,
         pressureRaw: packet.isHighResMode ? packet.pressure : null,
-        // statusFlags: packet.statusFlags, // Not in legacy model
-        // crc16: packet.crc16, // Not in legacy model constructor
         imuAccel: [packet.accelX, packet.accelY, packet.accelZ],
         imuGyro: [packet.gyroX, packet.gyroY, packet.gyroZ],
         receivedAt: packet.receivedAt,

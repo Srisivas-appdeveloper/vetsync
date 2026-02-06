@@ -220,7 +220,9 @@ class CollarDataPacket {
   final int respiratoryRateBpm;
   final double temperatureC;
   final int batteryPercent;
+  final int batteryMv; // Raw millivolt value
   final int signalQuality;
+  final int statusFlags; // Firmware status bitfield (0xF2 only)
 
   // Sensor values
   final int pressureFiltered;
@@ -238,7 +240,9 @@ class CollarDataPacket {
     required this.respiratoryRateBpm,
     required this.temperatureC,
     required this.batteryPercent,
+    required this.batteryMv,
     required this.signalQuality,
+    this.statusFlags = 0,
     required this.pressureFiltered,
     this.pressureRaw,
     this.imuAccel,
@@ -304,7 +308,9 @@ class CollarDataPacket {
       respiratoryRateBpm: data[10],
       temperatureC: buffer.getInt16(11, Endian.little) / 100.0,
       batteryPercent: data[13],
+      batteryMv: buffer.getUint16(27, Endian.little), // From reserved bytes
       signalQuality: data[14],
+      statusFlags: 0, // Not in filtered packets
       imuAccel: [
         buffer.getInt16(15, Endian.little),
         buffer.getInt16(17, Endian.little),
@@ -315,7 +321,8 @@ class CollarDataPacket {
         buffer.getInt16(23, Endian.little),
         buffer.getInt16(25, Endian.little),
       ],
-      // Bytes 27-32: Reserved
+      // Bytes 27-28: Battery mV (was reserved)
+      // Bytes 29-32: Reserved
       // Byte 33: Checksum
     );
   }
@@ -338,7 +345,9 @@ class CollarDataPacket {
       respiratoryRateBpm: 0, // Not calculated in raw mode
       temperatureC: buffer.getInt16(9, Endian.little) / 100.0,
       batteryPercent: data[11],
+      batteryMv: buffer.getUint16(25, Endian.little), // From reserved bytes
       signalQuality: data[12],
+      statusFlags: data.length > 27 ? data[27] : 0, // Optional status byte
       imuAccel: [
         buffer.getInt16(13, Endian.little),
         buffer.getInt16(15, Endian.little),
@@ -349,7 +358,8 @@ class CollarDataPacket {
         buffer.getInt16(21, Endian.little),
         buffer.getInt16(23, Endian.little),
       ],
-      // Bytes 25-26: Reserved/Checksum
+      // Bytes 25-26: Battery mV (was reserved)
+      // Byte 27: Status flags (optional, 0 if not present)
     );
   }
 
@@ -380,9 +390,14 @@ class CollarDataPacket {
         buffer.setInt16(25, imuGyro![2], Endian.little);
       }
 
+      // Add battery_mv at bytes 27-28
+      buffer.setUint16(27, batteryMv, Endian.little);
+      // statusFlags not in filtered packets (always 0)
+
       return data;
     } else {
-      final data = Uint8List(27);
+      // Raw mode: 28 bytes (extended from 27 to include batteryMv and statusFlags)
+      final data = Uint8List(28);
       final buffer = ByteData.view(data.buffer);
 
       data[0] = packetType;
@@ -403,6 +418,11 @@ class CollarDataPacket {
         buffer.setInt16(21, imuGyro![1], Endian.little);
         buffer.setInt16(23, imuGyro![2], Endian.little);
       }
+
+      // Add battery_mv at bytes 25-26
+      buffer.setUint16(25, batteryMv, Endian.little);
+      // Add status_flags at byte 27
+      data[27] = statusFlags;
 
       return data;
     }

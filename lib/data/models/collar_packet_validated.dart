@@ -17,6 +17,7 @@ import '../../utils/crc_utils.dart';
 class CollarPacket {
   // Header
   final int packetType;
+  final int sequenceNumber; // Packet sequence number for loss detection
   final int timestampUs; // ⚠️ Microseconds, not milliseconds!
 
   // Pressure data
@@ -47,6 +48,7 @@ class CollarPacket {
 
   CollarPacket._({
     required this.packetType,
+    required this.sequenceNumber,
     required this.timestampUs,
     required this.pressures,
     required int byte7,
@@ -130,6 +132,7 @@ class CollarPacket {
   /// - `InvalidPacketTypeException` if packet type unknown
   factory CollarPacket.fromBytes(
     List<int> bytes, {
+    int sequenceNumber = 0,
     bool throwOnCrcError = false,
     DateTime? receivedAt,
   }) {
@@ -179,6 +182,7 @@ class CollarPacket {
 
     return CollarPacket._(
       packetType: packetType,
+      sequenceNumber: sequenceNumber,
       timestampUs: buf.getUint32(1, Endian.little),
       pressures: pressures,
       byte7: bytes[7],
@@ -200,6 +204,7 @@ class CollarPacket {
   /// Create test packet for unit testing
   factory CollarPacket.mock({
     int packetType = 0xF1,
+    int sequenceNumber = 0,
     int timestampUs = 10000000, // 10 seconds in microseconds
     int pressure = 26000,
     int quality = 100,
@@ -229,7 +234,10 @@ class CollarPacket {
     final crc = CrcUtils.crc16Ccitt(bytes.buffer.asUint8List().sublist(0, 25));
     bytes.setUint16(25, crc, Endian.little);
 
-    return CollarPacket.fromBytes(bytes.buffer.asUint8List());
+    return CollarPacket.fromBytes(
+      bytes.buffer.asUint8List(),
+      sequenceNumber: sequenceNumber,
+    );
   }
 
   @override
