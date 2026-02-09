@@ -276,6 +276,36 @@ class CollarPacket {
     'received_at': receivedAt.toIso8601String(),
     'is_valid': isValid,
   };
+
+  /// Create a copy with an overridden timestamp.
+  ///
+  /// Used by [CollarStreamParser] to interpolate timestamps for array frame
+  /// sub-packets. The firmware assigns the same timestampUs to all packets
+  /// within one BLE array frame (2 or 4 packets). This method allows the
+  /// parser to spread them at the correct sample interval:
+  ///   - STANDARD (0xF1): 10,000 µs (100 Hz)
+  ///   - HIGH-RES (0xF2):  7,812 µs (128 Hz)
+  CollarPacket copyWithTimestamp(int newTimestampUs) {
+    return CollarPacket._(
+      packetType: packetType,
+      sequenceNumber: sequenceNumber,
+      timestampUs: newTimestampUs,
+      pressures: pressures,
+      byte7: _byte7,
+      accelX: accelX,
+      accelY: accelY,
+      accelZ: accelZ,
+      gyroX: gyroX,
+      gyroY: gyroY,
+      gyroZ: gyroZ,
+      temperatureRaw: temperatureRaw,
+      batteryMv: batteryMv,
+      batteryPercent: batteryPercent,
+      crc16: crc16,
+      crcValid: crcValid,
+      receivedAt: receivedAt,
+    );
+  }
 }
 
 /// Exception: Packet too short

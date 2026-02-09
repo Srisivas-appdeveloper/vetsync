@@ -30,6 +30,15 @@ class CollarStreamParser {
     0xA0, // Device Info
   };
 
+  /// Sample interval in microseconds per packet type.
+  /// From firmware spec:
+  ///   STANDARD (0xF1) = 100 Hz → 10,000 µs
+  ///   HIGH-RES (0xF2) = 128 Hz →  7,812.5 µs (truncated to 7812)
+  static const Map<int, int> _sampleIntervalUs = {
+    0xF1: 10000, // 100 Hz
+    0xF2: 7812, // 128 Hz (7812.5 µs, truncated — <1µs error per frame)
+  };
+
   /// Statistics
   int _totalBytesReceived = 0;
   int _packetsExtracted = 0;
@@ -181,6 +190,9 @@ class CollarStreamParser {
   /// Array frames have two possible formats:
   /// 1. [ptype, count, elem1(27), elem2(27), ...] - each element has ptype
   /// 2. [ptype, count, elem1(26), elem2(26), ...] - ptype stripped from elements
+  ///
+  /// After parsing, timestamps are interpolated because the firmware assigns
+  /// the same timestampUs to all sub-packets in one frame.
   List<CollarPacket>? _tryParseArrayFrame(int ptype) {
     if (_rxBuffer.length < 2) return null;
 
@@ -196,7 +208,7 @@ class CollarStreamParser {
         final packets = _extractArrayPacketsFormat1(ptype, count);
         if (packets != null) {
           _rxBuffer.removeRange(0, format1Len);
-          return packets;
+          return _interpolateFrameTimestamps(packets); // ← INTERPOLATED
         }
       }
     }
@@ -208,7 +220,7 @@ class CollarStreamParser {
         final packets = _extractArrayPacketsFormat2(ptype, count);
         if (packets != null) {
           _rxBuffer.removeRange(0, format2Len);
-          return packets;
+          return _interpolateFrameTimestamps(packets); // ← INTERPOLATED
         }
       }
     }
@@ -299,6 +311,54 @@ class CollarStreamParser {
       debugPrint('[StreamParser] Error extracting array format 2: $e');
       return null;
     }
+  }
+
+  /// Interpolate timestamps for array frame packets.
+  ///
+  /// The collar firmware assigns the same [timestampUs] to every sub-packet
+  /// within one BLE array frame. For ML-grade data, each sample needs a
+  /// unique, monotonically increasing timestamp spaced at the correct
+  /// sample interval.
+  ///
+  /// Given N packets with identical base timestamp T:
+  ///   packet[0].timestampUs = T
+  ///   packet[1].timestampUs = T + 1 * intervalUs
+  ///   packet[2].timestampUs = T + 2 * intervalUs
+  ///   ...
+  ///
+  /// If packets already have distinct timestamps (future firmware fix),
+  /// this method returns them unchanged.
+  List<CollarPacket> _interpolateFrameTimestamps(List<CollarPacket> packets) {
+    if (packets.length <= 1) return packets;
+
+    // Check if all packets share the same timestamp
+    final baseTs = packets.first.timestampUs;
+    final allSame = packets.every((p) => p.timestampUs == baseTs);
+    if (!allSame) {
+      // Firmware already provides distinct timestamps — no interpolation needed.
+      // This future-proofs against a firmware update that fixes this at source.
+      return packets;
+    }
+
+    // Determine sample interval from packet type
+    final ptype = packets.first.packetType;
+    final intervalUs = _sampleIntervalUs[ptype];
+    if (intervalUs == null) {
+      // Unknown packet type — don't interpolate, return as-is
+      debugPrint(
+        '[StreamParser] ⚠️ Unknown packet type 0x${ptype.toRadixString(16)} '
+        'for timestamp interpolation, skipping',
+      );
+      return packets;
+    }
+
+    // Create copies with interpolated timestamps
+    final result = <CollarPacket>[];
+    for (int i = 0; i < packets.length; i++) {
+      result.add(packets[i].copyWithTimestamp(baseTs + (i * intervalUs)));
+    }
+
+    return result;
   }
 
   /// Check if packet type is a response (not a data packet)
